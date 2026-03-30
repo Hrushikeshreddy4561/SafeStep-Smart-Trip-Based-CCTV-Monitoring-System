@@ -1,0 +1,15 @@
+# CCTV Surveillance System - Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Libraries
+opencv-python==4.8.0.76
+numpy==1.24.3
+insightface==0.7.3
+onnxruntime==1.15.1
+
+# Note for Windows Users:
+# dlib is included as a pre-built wheel (dlib-19.24.1-cp311-cp311-win_amd64.whl)
+# Install it with: pip install dlib-19.24.1-cp311-cp311-win_amd64.whl
+#
+# For other Python versions or OS, use:
+# pip install dlib
