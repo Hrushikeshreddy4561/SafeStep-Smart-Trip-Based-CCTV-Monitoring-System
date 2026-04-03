@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SafeStep — Smart Trip-Based CCTV Monitoring System">
+    <title>{% block title %}SafeStep{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% if current_user.is_authenticated %}
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a href="{{ url_for('main.dashboard') }}" class="navbar-brand">
+                🛡️ <span>SafeStep</span>
+            </a>
+            <div class="navbar-links">
+                <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}">
+                    📊 Dashboard
+                </a>
+                <a href="{{ url_for('main.alerts_page') }}" class="{{ 'active' if request.endpoint in ['main.alerts_page', 'main.alert_detail'] }}">
+                    🔔 Alerts
+                    <span class="nav-badge" id="nav-alert-count" style="display: none;">0</span>
+                </a>
+                <a href="{{ url_for('auth.logout') }}">
+                    Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="flash-message flash-{{ category }}" style="max-width:600px; margin:1rem auto;">
+                {{ message }}
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+
+    {% block scripts %}{% endblock %}
+
+    <script>
+        // Update alert badge count
+        async function updateAlertBadge() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                const badge = document.getElementById('nav-alert-count');
+                if (badge && data.unreviewed_alerts > 0) {
+                    badge.textContent = data.unreviewed_alerts;
+                    badge.style.display = 'inline';
+                } else if (badge) {
+                    badge.style.display = 'none';
+                }
+            } catch (e) {}
+        }
+        {% if current_user.is_authenticated %}
+        updateAlertBadge();
+        setInterval(updateAlertBadge, 10000);
+        {% endif %}
+    </script>
+</body>
+</html>

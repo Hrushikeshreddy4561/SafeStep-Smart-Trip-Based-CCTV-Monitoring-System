@@ -143,8 +143,10 @@ def main():
     print(f"[INFO] Log      -> {config.ALERTS_LOG}")
     print("[INFO] Capture mode: ZONE ENTRY (one snapshot per entry event)\n")
 
-    paused       = False
-    video_speed  = config.VIDEO_SPEED
+    paused             = False
+    video_speed        = config.VIDEO_SPEED
+    _frame_counter     = 0       # increments every frame
+    _last_face_results = []      # cached result from last InsightFace call
 
     while True:
         if paused:
@@ -185,15 +187,32 @@ def main():
                 x, y, bw, bh = pet_filter.get_bounding_box(c)
                 cv2.rectangle(frame, (x, y), (x+bw, y+bh), config.COLOR_LOW, 1)
 
-        # Face recognition
-        # Keep a clean copy BEFORE drawing any boxes.
-        # Passed to alerter so FACE crop has no bounding boxes or labels on it.
+        # Face recognition — frame-skip optimisation
+        # InsightFace (RetinaFace + ArcFace) is expensive on CPU.
+        # We run it only every FACE_DETECT_EVERY_N_FRAMES frames and reuse
+        # the last result in between. At 20 FPS with value=4, that is still
+        # ~5 detections/sec — more than enough for zone entry capture.
+        #
+        # clean_frame is copied BEFORE drawing boxes so the saved face crop
+        # has no bounding boxes or labels on it.
         clean_frame = frame.copy()
 
-        face_results = []
-        if person_contours:
-            face_results = recognizer.identify_faces(frame)
+        _frame_counter += 1
+        run_face_detect = (bool(person_contours) and
+                           _frame_counter % config.FACE_DETECT_EVERY_N_FRAMES == 0)
+
+        if run_face_detect:
+            _last_face_results = recognizer.identify_faces(frame)
+
+        face_results = _last_face_results
+
+        # Always redraw boxes (even on skipped frames) using the cached result
+        if face_results:
             recognizer.draw_face_boxes(frame, face_results)
+
+        # Clear cache when no person is in frame so stale boxes don't persist
+        if not person_contours:
+            _last_face_results = []
 
         # Alert logic — pass clean (for face crop) AND annotated frame (for body)
         alert_level, message = alerter.evaluate(

@@ -41,6 +41,49 @@ env/
 embeddings.pkl
 known_faces/*.jpg
 known_faces/*.png
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project-specific
+embeddings.pkl
+known_faces/*.jpg
+known_faces/*.png
 evidence/*.jpg
 evidence/*.png
 evidence/*.jpeg
@@ -51,3 +94,7 @@ alerts/alert_log.txt
 .DS_Store
 Thumbs.db
 evidence/
+
+# Web App
+webapp/.env
+webapp/database.db

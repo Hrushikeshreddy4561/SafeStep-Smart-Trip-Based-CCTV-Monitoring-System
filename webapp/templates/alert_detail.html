@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}SafeStep — Alert #{{ alert.id }}{% endblock %}
+
+{% block content %}
+<div class="page-container alert-detail-container">
+    <!-- Back link -->
+    <a href="{{ url_for('main.alerts_page') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+        ← Back to Alerts
+    </a>
+
+    <!-- Alert Header -->
+    <div class="card alert-detail-header animate-fade-in-up">
+        <div class="alert-icon">⚠️</div>
+        <h1>UNKNOWN PERSON DETECTED</h1>
+        <div class="alert-meta">
+            <span class="alert-level-badge badge-{{ alert.alert_level | lower }}" style="margin-right: 0.5rem;">
+                {{ alert.alert_level }}
+            </span>
+            {{ alert.timestamp }}
+        </div>
+        {% if alert.email_sent %}
+        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--accent-green);">
+            ✉️ Email notification sent
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Face Images -->
+    {% if alert.face_images %}
+    <div class="evidence-section animate-fade-in-up" style="animation-delay: 0.1s;">
+        <h2>👤 Captured Face(s)</h2>
+        <div class="face-gallery">
+            {% for face in alert.face_images %}
+            <div class="face-image">
+                <img src="{{ url_for('main.serve_evidence', filename=face) }}"
+                     alt="Unknown person face {{ loop.index }}"
+                     onerror="this.parentElement.innerHTML='<div style=&quot;padding:2rem;text-align:center;color:var(--text-muted);&quot;>Image unavailable</div>'">
+                <div class="face-label">Face #{{ loop.index }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Body Image -->
+    {% if alert.body_image_path %}
+    <div class="evidence-section animate-fade-in-up" style="animation-delay: 0.2s;">
+        <h2>📸 Full Scene</h2>
+        <div class="body-image">
+            <img src="{{ url_for('main.serve_evidence', filename=alert.body_image_path) }}"
+                 alt="Full scene capture"
+                 onerror="this.parentElement.innerHTML='<div style=&quot;padding:2rem;text-align:center;color:var(--text-muted);&quot;>Image unavailable</div>'">
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Action Buttons -->
+    <div class="animate-fade-in-up" style="animation-delay: 0.3s;">
+        <div class="action-buttons">
+            <a href="tel:{{ user.police_phone or '100' }}"
+               class="action-btn btn-police"
+               onclick="recordAction({{ alert.id }}, 'police')"
+               id="btn-police">
+                <span class="action-icon">🚔</span>
+                CALL POLICE
+            </a>
+            <a href="tel:{{ user.neighbour_phone or '' }}"
+               class="action-btn btn-neighbour"
+               onclick="recordAction({{ alert.id }}, 'neighbour')"
+               id="btn-neighbour">
+                <span class="action-icon">📞</span>
+                CALL NEIGHBOUR
+            </a>
+        </div>
+
+        {% if alert.action_taken and alert.action_taken != 'none' %}
+        <div class="action-logged">
+            ✅ Action taken: <strong>{{ alert.action_taken | capitalize }}</strong> contacted
+        </div>
+        {% endif %}
+
+        <div style="margin-top: 1rem;">
+            {% if alert.reviewed %}
+            <button class="btn-reviewed done" disabled>
+                ✅ Reviewed
+            </button>
+            {% else %}
+            <button class="btn-reviewed" id="btn-review" onclick="markReviewed({{ alert.id }})">
+                ✅ Mark as Reviewed
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Alert Info -->
+    <div class="card animate-fade-in-up" style="animation-delay: 0.4s; margin-top: 1.5rem;">
+        <div class="card-header">
+            <h3 class="card-title">ℹ️ Alert Details</h3>
+        </div>
+        <div style="display: grid; gap: 0.6rem; font-size: 0.9rem; color: var(--text-secondary);">
+            <div><strong>Alert ID:</strong> #{{ alert.id }}</div>
+            <div><strong>Level:</strong> {{ alert.alert_level }}</div>
+            <div><strong>Time:</strong> {{ alert.timestamp }}</div>
+            <div><strong>Faces Detected:</strong> {{ alert.face_images | length }}</div>
+            <div><strong>Email Sent:</strong> {{ '✅ Yes' if alert.email_sent else '❌ No' }}</div>
+            <div><strong>Reviewed:</strong> {{ '✅ Yes' if alert.reviewed else '⏳ Pending' }}</div>
+            <div><strong>Action:</strong> {{ alert.action_taken | capitalize if alert.action_taken != 'none' else 'None yet' }}</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function recordAction(alertId, action) {
+        try {
+            await fetch(`/api/alerts/${alertId}/action`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action })
+            });
+        } catch (e) {
+            console.error('Failed to record action:', e);
+        }
+    }
+
+    async function markReviewed(alertId) {
+        try {
+            const resp = await fetch(`/api/alerts/${alertId}/review`, { method: 'POST' });
+            if (resp.ok) {
+                const btn = document.getElementById('btn-review');
+                btn.textContent = '✅ Reviewed';
+                btn.classList.add('done');
+                btn.disabled = true;
+            }
+        } catch (e) {
+            console.error('Failed to mark reviewed:', e);
+        }
+    }
+</script>
+{% endblock %}

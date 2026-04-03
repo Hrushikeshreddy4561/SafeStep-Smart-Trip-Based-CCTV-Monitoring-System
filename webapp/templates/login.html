@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}SafeStep — Login{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <span class="shield-icon">🛡️</span>
+            <h1>SafeStep</h1>
+            <p>Smart Trip-Based CCTV Monitor</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="flash-message flash-{{ category }}">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('auth.login') }}" id="login-form">
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" placeholder="you@example.com" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn btn-primary" id="login-btn">
+                Sign In
+            </button>
+        </form>
+
+        <div class="form-footer">
+            Don't have an account? <a href="{{ url_for('auth.register') }}">Create one</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

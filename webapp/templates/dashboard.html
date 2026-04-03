@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}SafeStep — Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div style="margin-bottom: 0.5rem;">
+        <h1 style="font-size: 1.5rem; font-weight: 700;" class="animate-fade-in">
+            Welcome back, {{ current_user.name }} 👋
+        </h1>
+        <p style="color: var(--text-secondary); font-size: 0.9rem;" class="animate-fade-in">
+            Your home security dashboard
+        </p>
+    </div>
+
+    <div class="dashboard-grid">
+        <!-- Left Column: Camera Feed -->
+        <div class="animate-fade-in-up">
+            <!-- Camera Feed -->
+            <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 1.5rem;">
+                <div class="camera-container" id="camera-container">
+                    <img src="{{ url_for('main.video_feed') }}" class="camera-feed" id="camera-feed"
+                         alt="Live Camera Feed" onerror="this.style.display='none'; document.getElementById('camera-offline').style.display='flex';">
+                    <div class="camera-offline" id="camera-offline" style="display: none;">
+                        <span class="icon">📷</span>
+                        <span>Camera starting...</span>
+                        <button class="btn btn-outline" style="margin-top: 0.5rem;" onclick="startCamera()">
+                            Start Camera
+                        </button>
+                    </div>
+                    <div class="camera-status-badge" id="camera-status">
+                        <span id="status-text">CONNECTING</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="card animate-fade-in-up" style="animation-delay: 0.1s;">
+                <div class="card-header">
+                    <h3 class="card-title">📊 Overview</h3>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-trips">{{ stats.total_trips }}</div>
+                        <div class="stat-label">Total Trips</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-alerts">{{ stats.total_alerts }}</div>
+                        <div class="stat-label">Total Alerts</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-unreviewed">{{ unreviewed }}</div>
+                        <div class="stat-label">Unreviewed</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Trip Mode + Controls -->
+        <div class="animate-slide-right">
+            <!-- Trip Mode Toggle -->
+            <div class="card trip-toggle-card" style="margin-bottom: 1.5rem;">
+                <h3>🧳 Trip Mode</h3>
+                <p>Activate surveillance while you're away</p>
+
+                <label class="toggle-switch">
+                    <input type="checkbox" id="trip-toggle"
+                           {% if trip %}checked{% endif %}
+                           onchange="toggleTripMode(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+
+                <div class="trip-status {{ 'active' if trip else 'inactive' }}" id="trip-status-badge">
+                    {{ '🟢 MONITORING' if trip else '⏸️ STANDBY' }}
+                </div>
+
+                {% if trip %}
+                <div class="trip-duration" id="trip-duration">--:--:--</div>
+                <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.3rem;">
+                    Started: {{ trip.start_time[:16] }}
+                </p>
+                {% else %}
+                <div class="trip-duration" id="trip-duration" style="display: none;">--:--:--</div>
+                {% endif %}
+            </div>
+
+            <!-- Camera Control -->
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-header">
+                    <h3 class="card-title">📷 Camera</h3>
+                </div>
+                <div style="display: grid; gap: 0.8rem;">
+                    <button class="btn btn-outline" id="btn-camera-start" onclick="startCamera()" style="width: 100%;">
+                        ▶ Start Camera Preview
+                    </button>
+                    <button class="btn btn-outline" id="btn-camera-stop" onclick="stopCamera()" style="width: 100%;">
+                        ⏹ Stop Camera
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quick Links -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">⚡ Quick Actions</h3>
+                </div>
+                <div style="display: grid; gap: 0.8rem;">
+                    <a href="{{ url_for('main.alerts_page') }}" class="btn btn-outline" style="width: 100%;">
+                        🔔 View Alerts
+                        {% if unreviewed > 0 %}
+                        <span class="nav-badge">{{ unreviewed }}</span>
+                        {% endif %}
+                    </a>
+                    <a href="tel:{{ current_user.police_phone or '100' }}" class="btn btn-outline" style="width: 100%; color: var(--accent-red);">
+                        🚔 Emergency: {{ current_user.police_phone or '100' }}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+    // Auto-start camera preview on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        startCamera();
+        pollStatus();
+        setInterval(pollStatus, 5000);
+    });
+</script>
+{% endblock %}

@@ -64,6 +64,18 @@ FACE_RECOGNITION_TOLERANCE = 0.45
 #   (640, 640) → more accurate, higher CPU cost
 INSIGHTFACE_DET_SIZE = (320, 320)
 
+# FACE_DETECT_EVERY_N_FRAMES
+#   Run InsightFace only once every N frames instead of every frame.
+#   This is the single biggest FPS improvement for CPU-only systems.
+#
+#   1  → every frame   (high accuracy, heavy CPU — original behaviour)
+#   3  → every 3rd     (good balance for 20 FPS target)
+#   5  → every 5th     (very light — fine for slow-moving scenes)
+#
+#   At 20 FPS, value=4 means face detection runs ~5 times per second —
+#   more than enough to catch anyone entering the zone.
+FACE_DETECT_EVERY_N_FRAMES = 4
+
 # ─── FACE CROP EVIDENCE (Fix 1) ───────────────────────────────────────────────
 #
 # FACE_CROP_PADDING

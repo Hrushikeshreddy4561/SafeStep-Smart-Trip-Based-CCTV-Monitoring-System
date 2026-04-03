@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}SafeStep — Create Account{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card" style="max-width: 520px;">
+        <div class="auth-logo">
+            <span class="shield-icon">🛡️</span>
+            <h1>Create Account</h1>
+            <p>Set up your SafeStep monitoring profile</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="flash-message flash-{{ category }}">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('auth.register') }}">
+            <div class="form-group">
+                <label for="name">Full Name</label>
+                <input type="text" id="name" name="name" placeholder="Your name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" placeholder="you@example.com" required>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="Min 6 chars" required minlength="6">
+                </div>
+                <div class="form-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" placeholder="Re-enter" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="phone">Your Phone Number</label>
+                <input type="tel" id="phone" name="phone" placeholder="+91 9876543210">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="neighbour_name">Neighbour's Name</label>
+                    <input type="text" id="neighbour_name" name="neighbour_name" placeholder="Trusted neighbour">
+                </div>
+                <div class="form-group">
+                    <label for="neighbour_phone">Neighbour's Phone</label>
+                    <input type="tel" id="neighbour_phone" name="neighbour_phone" placeholder="+91 9876543210">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="police_phone">Local Police Station Number</label>
+                <input type="tel" id="police_phone" name="police_phone" placeholder="100" value="100">
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                Create Account
+            </button>
+        </form>
+
+        <div class="form-footer">
+            Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

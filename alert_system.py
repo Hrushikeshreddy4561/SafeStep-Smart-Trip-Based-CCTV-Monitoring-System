@@ -52,6 +52,18 @@ import config
 from utils.helpers import readable_time
 
 
+# ─── Capture Callback Hook ──────────────────────────────────────────────────
+# The web app registers a callback here to be notified when evidence is saved.
+# This avoids tightly coupling the alert system to the web layer.
+
+_on_capture_callback = None
+
+def set_capture_callback(callback):
+    """Register a function(face_paths, body_path, level) for capture events."""
+    global _on_capture_callback
+    _on_capture_callback = callback
+
+
 # ─── Geometry ────────────────────────────────────────────────────────────────
 
 def _contours_in_entry_zone(person_contours, frame_width):
@@ -85,53 +97,56 @@ def _burn_bar(image, label):
 
 def _save_pair(clean_frame, annotated_frame, alert_level, face_boxes):
     """
-    Save two evidence files sharing the same timestamp:
+    Save evidence files sharing the same timestamp:
 
-      FACE_<level>_unknown_<ts>.jpg
+      FACE_<level>_unknown_<ts>_face<N>.jpg   (one per unknown face)
         Clean face crop from clean_frame (no bounding boxes, no labels).
+        Saves ALL unknown faces, not just the closest one.
 
       BODY_<level>_unknown_<ts>.jpg
         Full annotated frame (with bounding boxes) + timestamp bar.
         Shows the complete body and room context.
 
-    Returns (face_path, body_path).
+    Returns (face_paths, body_path) where face_paths is a list.
     """
     os.makedirs(config.EVIDENCE_DIR, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    def fp(prefix):
+    def fp(prefix, suffix=""):
         return os.path.join(config.EVIDENCE_DIR,
-                            f"{prefix}_{alert_level}_unknown_{ts}.jpg")
+                            f"{prefix}_{alert_level}_unknown_{ts}{suffix}.jpg")
 
-    # ── FACE: crop from the CLEAN frame (no drawn boxes) ─────────────────────
-    face_path = None
+    # ── FACE: crop EVERY unknown face from the CLEAN frame ───────────────────
+    face_paths = []
     if face_boxes and clean_frame is not None:
         fh, fw = clean_frame.shape[:2]
-
-        def area(b):
-            t, r, b2, l = b
-            return max(0, b2 - t) * max(0, r - l)
-
-        top, right, bottom, left = max(face_boxes, key=area)
         pad    = config.FACE_CROP_PADDING
-        top    = max(0,  top    - pad)
-        left   = max(0,  left   - pad)
-        bottom = min(fh, bottom + pad)
-        right  = min(fw, right  + pad)
 
-        crop = clean_frame[top:bottom, left:right]
-        if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
-            crop = clean_frame
+        for idx, box in enumerate(face_boxes, start=1):
+            top, right, bottom, left = box
 
-        face_path = fp("FACE")
-        cv2.imwrite(face_path, crop)   # clean — no text overlaid
+            # Add padding around the face
+            top    = max(0,  top    - pad)
+            left   = max(0,  left   - pad)
+            bottom = min(fh, bottom + pad)
+            right  = min(fw, right  + pad)
+
+            crop = clean_frame[top:bottom, left:right]
+            if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
+                # Face region too small or invalid — save full frame as fallback
+                crop = clean_frame
+
+            suffix    = f"_face{idx}" if len(face_boxes) > 1 else ""
+            face_path = fp("FACE", suffix)
+            cv2.imwrite(face_path, crop)   # clean — no text overlaid
+            face_paths.append(face_path)
 
     # ── BODY: full annotated frame + timestamp bar ────────────────────────────
     body_path = fp("BODY")
     cv2.imwrite(body_path,
                 _burn_bar(annotated_frame, f"BODY | {alert_level} | unknown"))
 
-    return face_path, body_path
+    return face_paths, body_path
 
 
 def save_evidence_timestamped(frame, alert_level, name="", face_boxes=None):
@@ -313,17 +328,27 @@ class AlertSystem:
                     self._session_captured = True
                     unknown_boxes = [f['box'] for f in face_results
                                      if not f['familiar']]
-                    face_path, body_path = _save_pair(
+                    face_paths, body_path = _save_pair(
                         clean_frame, annotated_frame, level, unknown_boxes
                     )
-                    self._log(level, f"CAPTURED FACE: {face_path}")
+                    for fp in face_paths:
+                        self._log(level, f"CAPTURED FACE: {fp}")
                     self._log(level, f"CAPTURED BODY: {body_path}")
                     print(f"\n{'!'*50}")
                     print(f"  {level} - {readable_time()}")
                     print(f"  Absent {int(absent)}s >= {config.ABSENCE_TIMEOUT}s")
-                    print(f"  FACE -> {face_path}")
+                    print(f"  FACES ({len(face_paths)}):")
+                    for fp in face_paths:
+                        print(f"    -> {fp}")
                     print(f"  BODY -> {body_path}")
                     print(f"{'!'*50}\n")
+
+                    # Notify web app (if callback registered)
+                    if _on_capture_callback:
+                        try:
+                            _on_capture_callback(face_paths, body_path, level)
+                        except Exception as e:
+                            print(f"[ALERT] Capture callback error: {e}")
 
                 else:
                     # ✗ Re-entry too soon — block and suppress for rest of session
