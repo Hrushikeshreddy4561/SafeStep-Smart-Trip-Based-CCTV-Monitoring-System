@@ -1,15 +1,15 @@
-# CCTV Surveillance System - Dependencies
-# Install with: pip install -r requirements.txt
+# SafeStep CCTV Monitoring System -- Dependencies
 
-# Core Libraries
-opencv-python==4.8.0.76
-numpy==1.24.3
-insightface==0.7.3
-onnxruntime==1.15.1
+# Core Computer Vision
+opencv-python>=4.8.0
+numpy>=1.24.0
+insightface>=0.7.3
+onnxruntime>=1.15.0
 
-# Note for Windows Users:
-# dlib is included as a pre-built wheel (dlib-19.24.1-cp311-cp311-win_amd64.whl)
-# Install it with: pip install dlib-19.24.1-cp311-cp311-win_amd64.whl
-#
-# For other Python versions or OS, use:
-# pip install dlib
+# Web Application
+flask>=3.0.0
+python-dotenv>=1.0.0
+flask-login>=0.6.3
+bcrypt>=4.0.1
+requests>=2.31.0
+APScheduler>=3.10.4

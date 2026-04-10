@@ -13,6 +13,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 EMAILJS_API_URL = "https://api.emailjs.com/api/v1.0/email/send"
 EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
+EMAILJS_PRIVATE_KEY = os.getenv("EMAILJS_PRIVATE_KEY", "")
 EMAILJS_SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")
 EMAILJS_ALERT_TEMPLATE_ID = os.getenv("EMAILJS_ALERT_TEMPLATE_ID", "")
 EMAILJS_SUMMARY_TEMPLATE_ID = os.getenv("EMAILJS_SUMMARY_TEMPLATE_ID", "")
@@ -29,6 +30,7 @@ def _send_email(template_id, template_params):
         "service_id": EMAILJS_SERVICE_ID,
         "template_id": template_id,
         "user_id": EMAILJS_PUBLIC_KEY,
+        "accessToken": EMAILJS_PRIVATE_KEY,
         "template_params": template_params,
     }
 
@@ -78,6 +80,7 @@ def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level):
     template_params = {
         "to_name": user['name'],
         "to_email": user['email'],
+        "email": user['email'],
         "alert_level": alert_level,
         "timestamp": timestamp,
         "face_count": str(face_count),
@@ -116,6 +119,7 @@ def send_daily_summary(user, trip_start, alerts_today, trip_duration_str):
     template_params = {
         "to_name": user['name'],
         "to_email": user['email'],
+        "email": user['email'],
         "date": today,
         "alert_count": str(alert_count),
         "alert_details": alert_details,

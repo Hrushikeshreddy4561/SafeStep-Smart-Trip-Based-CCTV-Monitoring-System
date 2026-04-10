@@ -77,16 +77,23 @@ def alert_detail(alert_id):
 # ─── Video Stream ─────────────────────────────────────────────────────────────
 
 def generate_frames():
-    """Generator for MJPEG streaming."""
+    """Generator for MJPEG streaming with adaptive timing."""
+    import time
+    target_interval = 1.0 / config.FPS_TARGET
     while True:
+        t0 = time.monotonic()
         frame = cctv_runner.get_frame()
         if frame:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            # Sleep to match target FPS (minus time already spent)
+            elapsed = time.monotonic() - t0
+            sleep_time = target_interval - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
         else:
-            # Send a small delay frame when no camera
-            import time
-            time.sleep(0.1)
+            # Camera not producing frames: wait without burning CPU
+            time.sleep(0.15)
 
 
 @main_bp.route('/video_feed')
@@ -148,8 +155,9 @@ def api_start_camera():
 @main_bp.route('/api/camera/stop', methods=['POST'])
 @login_required
 def api_stop_camera():
-    """Stop camera."""
+    """Stop camera — releases hardware."""
     cctv_runner.stop_preview()
+    cctv_runner._stop_loop()
     cctv_runner.stop_camera()
     return jsonify({"success": True, "message": "Camera stopped"})
 
@@ -160,7 +168,11 @@ def api_start_trip():
     """Start trip mode — activates full detection."""
     existing = get_active_trip(current_user.id)
     if existing:
-        return jsonify({"success": False, "message": "Trip already active"})
+        if cctv_runner.is_trip_active:
+            return jsonify({"success": False, "message": "Trip already active"})
+        else:
+            # Ghost session: DB thinks it's active but runner is not
+            end_trip_session(existing['id'])
 
     session_id = start_trip_session(current_user.id)
 
@@ -180,8 +192,12 @@ def api_start_trip():
             if success:
                 mark_alert_emailed(alert_id)
 
-    cctv_runner.start_trip_mode(current_user.id, session_id,
+    success = cctv_runner.start_trip_mode(current_user.id, session_id,
                                  on_alert_callback=on_alert)
+
+    if not success:
+        end_trip_session(session_id)
+        return jsonify({"success": False, "message": "Failed to start camera. Make sure it is connected and not in use by another app."})
 
     return jsonify({"success": True, "message": "Trip mode activated",
                     "session_id": session_id})

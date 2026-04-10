@@ -59,8 +59,8 @@ def create_app():
     atexit.register(cctv_runner.shutdown)
 
     print("\n" + "=" * 55)
-    print("  🛡️  SafeStep — Smart Trip-Based CCTV Monitor")
-    print("  📍 http://localhost:5000")
+    print("  SafeStep -- Smart Trip-Based CCTV Monitor")
+    print("  URL: http://localhost:5000")
     print("=" * 55 + "\n")
 
     return app

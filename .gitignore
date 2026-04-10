@@ -27,7 +27,7 @@ pip-delete-this-directory.txt
 venv/
 ENV/
 env/
-.venv
+.venv/
 
 # IDE
 .vscode/
@@ -35,66 +35,33 @@ env/
 *.swp
 *.swo
 *~
-.DS_Store
-
-# Project-specific
-embeddings.pkl
-known_faces/*.jpg
-known_faces/*.png
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Virtual Environment
-venv/
-ENV/
-env/
-.venv
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Project-specific
-embeddings.pkl
-known_faces/*.jpg
-known_faces/*.png
-evidence/*.jpg
-evidence/*.png
-evidence/*.jpeg
-alerts/alert_log.txt
-*.log
 
 # OS
 .DS_Store
 Thumbs.db
-evidence/
 
-# Web App
+# Project — runtime data (not tracked)
+embeddings.pkl
+evidence/
+alerts/alert_log.txt
+*.log
+
+# Project — user-specific data
+known_faces/*.jpg
+known_faces/*.jpeg
+known_faces/*.png
+
+# Web App — secrets and local database
 webapp/.env
+!webapp/.env.example
 webapp/database.db
+webapp/database.db-wal
+webapp/database.db-shm
+
+# Docs (optional binary)
+*.docx
+
+# Keep placeholder files
+!.gitkeep
+!known_faces/.gitkeep
+!alerts/.gitkeep

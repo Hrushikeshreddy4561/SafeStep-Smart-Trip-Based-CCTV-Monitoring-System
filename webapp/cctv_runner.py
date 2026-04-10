@@ -1,7 +1,14 @@
 """
-cctv_runner.py — Background CCTV Engine Thread
+cctv_runner.py — Background CCTV Engine Thread (v3 — Lag-Free)
 Runs the CCTV surveillance pipeline in a background thread.
 The web app controls start/stop via trip mode toggle.
+
+Performance Architecture:
+  - Single camera loop thread that stays running across mode switches
+  - Mode flag flips instantly — no thread stop/start during transitions
+  - FaceRecognizer loaded once and kept alive permanently
+  - Camera stays open between preview↔trip toggles
+  - Buffer drain only when camera is first opened or restarted
 """
 
 import sys
@@ -28,34 +35,53 @@ class CCTVRunner:
     """
     Manages the CCTV surveillance engine in a background thread.
 
-    Two modes:
+    Uses a SINGLE camera loop thread that switches between two modes:
       1. PREVIEW — Camera is on, shows live feed, no detection.
       2. TRIP MODE — Camera + full detection pipeline (motion, faces, alerts).
+
+    Mode switches are instant flag flips — no thread teardown/recreation needed.
     """
+
+    # Operating modes
+    MODE_OFF     = 0
+    MODE_PREVIEW = 1
+    MODE_TRIP    = 2
 
     def __init__(self):
         self._camera = None
         self._camera_lock = threading.Lock()
-        self._preview_thread = None
-        self._trip_thread = None
-        self._preview_running = False
-        self._trip_running = False
+        self._loop_thread = None
+        self._loop_running = False
+        self._mode = self.MODE_OFF
+        self._mode_lock = threading.Lock()
+
         self._latest_frame = None
         self._frame_lock = threading.Lock()
         self._trip_session_id = None
         self._user_id = None
-        self._on_alert_callback = None   # called when unknown person captured
+        self._on_alert_callback = None
 
-        # Detection modules (loaded once)
+        # Detection modules — loaded once and reused
         self._detector = None
         self._pet_filter = None
-        self._recognizer = None
+        self._recognizer = None      # expensive; loaded once, kept forever
         self._alerter = None
+        self._modules_loaded = False  # True after first trip start
+
+        # Target frame interval (seconds)
+        self._frame_interval = 1.0 / config.FPS_TARGET
 
     # ── Camera Management ─────────────────────────────────────────────────────
 
+    def _drain_buffer(self):
+        """Discard stale frames from OpenCV internal buffer."""
+        with self._camera_lock:
+            if self._camera and self._camera.isOpened():
+                for _ in range(5):
+                    self._camera.grab()
+
     def start_camera(self):
-        """Open the camera for live preview."""
+        """Open the camera hardware."""
         with self._camera_lock:
             if self._camera is not None and self._camera.isOpened():
                 return True
@@ -67,19 +93,29 @@ class CCTVRunner:
             self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
             self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
             self._camera.set(cv2.CAP_PROP_FPS, config.FPS_TARGET)
+            # Minimise internal buffer for lowest latency
+            self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             print("[CCTV] Camera opened.")
+        self._drain_buffer()
         return True
 
     def stop_camera(self):
-        """Release the camera."""
+        """Release the camera hardware."""
         with self._camera_lock:
             if self._camera is not None:
                 self._camera.release()
                 self._camera = None
                 print("[CCTV] Camera released.")
 
+    def _read_frame(self):
+        """Read a single frame from the camera. Returns (ret, frame)."""
+        with self._camera_lock:
+            if self._camera is None or not self._camera.isOpened():
+                return False, None
+            return self._camera.read()
+
     def get_frame(self):
-        """Get the latest frame as JPEG bytes for streaming."""
+        """Get the latest frame as JPEG bytes for MJPEG streaming."""
         with self._frame_lock:
             if self._latest_frame is not None:
                 ret, jpeg = cv2.imencode('.jpg', self._latest_frame,
@@ -88,41 +124,196 @@ class CCTVRunner:
                     return jpeg.tobytes()
         return None
 
+    # ── Unified Camera Loop ───────────────────────────────────────────────────
+
+    def _start_loop(self):
+        """Start the single camera loop thread if not running."""
+        if self._loop_running:
+            return
+        self._loop_running = True
+        self._loop_thread = threading.Thread(target=self._camera_loop, daemon=True)
+        self._loop_thread.start()
+
+    def _stop_loop(self):
+        """Stop the camera loop thread."""
+        self._loop_running = False
+        if self._loop_thread:
+            self._loop_thread.join(timeout=3)
+            self._loop_thread = None
+
+    def _camera_loop(self):
+        """
+        Single loop that handles BOTH preview and trip modes.
+        Mode switches are checked every frame — no thread restart needed.
+        """
+        frame_counter = 0
+        last_face_results = []
+
+        while self._loop_running:
+            loop_start = time.monotonic()
+
+            # Check current mode
+            with self._mode_lock:
+                current_mode = self._mode
+
+            if current_mode == self.MODE_OFF:
+                time.sleep(0.05)
+                continue
+
+            ret, frame = self._read_frame()
+            if not ret:
+                time.sleep(0.02)
+                continue
+
+            if current_mode == self.MODE_PREVIEW:
+                # ── Preview: just overlay and store ───────────────────────
+                self._add_preview_overlay(frame)
+                last_face_results = []
+                frame_counter = 0
+
+            elif current_mode == self.MODE_TRIP:
+                # ── Trip: full detection pipeline ─────────────────────────
+                if not self._detector:
+                    # Shouldn't happen, but guard against it
+                    self._add_preview_overlay(frame)
+                else:
+                    contours, _ = self._detector.detect(frame)
+                    motion_detected = len(contours) > 0
+                    person_contours, pet_contours = self._pet_filter.filter(contours)
+
+                    # Draw motion boxes
+                    if config.SHOW_MOTION_BOXES:
+                        for c in person_contours:
+                            x, y, bw, bh = self._pet_filter.get_bounding_box(c)
+                            cv2.rectangle(frame, (x, y), (x+bw, y+bh),
+                                          config.COLOR_HIGH, 2)
+                        for c in pet_contours:
+                            x, y, bw, bh = self._pet_filter.get_bounding_box(c)
+                            cv2.rectangle(frame, (x, y), (x+bw, y+bh),
+                                          config.COLOR_LOW, 1)
+
+                    # Only copy frame for evidence when there's motion
+                    clean_frame = frame.copy() if person_contours else frame
+
+                    # Face recognition with frame skip
+                    frame_counter += 1
+                    run_face = (bool(person_contours) and
+                                frame_counter % config.FACE_DETECT_EVERY_N_FRAMES == 0)
+
+                    if run_face:
+                        last_face_results = self._recognizer.identify_faces(frame)
+
+                    face_results = last_face_results
+
+                    if face_results:
+                        self._recognizer.draw_face_boxes(frame, face_results)
+
+                    if not person_contours:
+                        last_face_results = []
+
+                    # Alert evaluation
+                    alert_level, message = self._alerter.evaluate(
+                        clean_frame, frame, motion_detected,
+                        person_contours, face_results
+                    )
+
+                    # Trip overlay
+                    self._add_trip_overlay(frame, alert_level, message)
+
+            # Store frame for streaming
+            with self._frame_lock:
+                self._latest_frame = frame
+
+            # Adaptive sleep: subtract processing time from target interval
+            elapsed = time.monotonic() - loop_start
+            sleep_time = self._frame_interval - elapsed
+            if sleep_time > 0.001:
+                time.sleep(sleep_time)
+
     # ── Preview Mode ──────────────────────────────────────────────────────────
 
     def start_preview(self):
         """Start camera preview without detection."""
-        if self._preview_running:
+        if self._mode == self.MODE_PREVIEW:
             return
         if not self.start_camera():
             return
-        self._preview_running = True
-        self._preview_thread = threading.Thread(target=self._preview_loop,
-                                                 daemon=True)
-        self._preview_thread.start()
+        with self._mode_lock:
+            self._mode = self.MODE_PREVIEW
+        self._start_loop()
         print("[CCTV] Preview started.")
 
     def stop_preview(self):
-        """Stop the preview loop."""
-        self._preview_running = False
-        if self._preview_thread:
-            self._preview_thread.join(timeout=3)
-            self._preview_thread = None
+        """Stop the preview (does NOT release camera)."""
+        with self._mode_lock:
+            if self._mode == self.MODE_PREVIEW:
+                self._mode = self.MODE_OFF
         print("[CCTV] Preview stopped.")
 
-    def _preview_loop(self):
-        """Simple loop: read frames and store for streaming."""
-        while self._preview_running and not self._trip_running:
-            with self._camera_lock:
-                if self._camera is None or not self._camera.isOpened():
-                    break
-                ret, frame = self._camera.read()
-            if ret:
-                # Add a simple timestamp bar for preview
-                self._add_preview_overlay(frame)
-                with self._frame_lock:
-                    self._latest_frame = frame
-            time.sleep(1.0 / config.FPS_TARGET)
+    # ── Trip Mode ─────────────────────────────────────────────────────────────
+
+    def _ensure_modules_loaded(self):
+        """Load detection modules. FaceRecognizer is loaded once and kept."""
+        if self._modules_loaded and self._recognizer is not None:
+            # Re-create only the per-trip state modules (fast)
+            self._detector = MotionDetector()
+            self._pet_filter = PetFilter()
+            self._alerter = AlertSystem()
+            return
+
+        print("[CCTV] Loading detection modules...")
+        self._detector = MotionDetector()
+        self._pet_filter = PetFilter()
+        self._alerter = AlertSystem()
+
+        if self._recognizer is None:
+            # This is the slow call (~2-4s) — only happens once per app run
+            self._recognizer = FaceRecognizer()
+
+        self._modules_loaded = True
+        print("[CCTV] Modules ready.")
+
+    def start_trip_mode(self, user_id, trip_session_id, on_alert_callback=None):
+        """Start full detection pipeline. Returns True on success, False on failure."""
+        if self._mode == self.MODE_TRIP:
+            return True
+
+        if not self.start_camera():
+            return False
+
+        self._user_id = user_id
+        self._trip_session_id = trip_session_id
+        self._on_alert_callback = on_alert_callback
+
+        # Load/reload detection modules
+        self._ensure_modules_loaded()
+        set_capture_callback(self._handle_capture)
+
+        # Instant mode switch — no thread restart needed!
+        with self._mode_lock:
+            self._mode = self.MODE_TRIP
+        self._start_loop()
+
+        print("[CCTV] Trip mode ACTIVE.")
+        return True
+
+    def stop_trip_mode(self):
+        """Stop detection, go back to preview."""
+        set_capture_callback(None)
+
+        # Instant mode switch back to preview — camera stays open,
+        # loop thread keeps running, zero interruption to the video feed.
+        with self._mode_lock:
+            self._mode = self.MODE_PREVIEW
+
+        # Clean up per-trip modules (but keep FaceRecognizer alive)
+        self._alerter = None
+        self._detector = None
+        self._pet_filter = None
+
+        print("[CCTV] Trip mode stopped -> Preview.")
+
+    # ── Overlays ──────────────────────────────────────────────────────────────
 
     def _add_preview_overlay(self, frame):
         """Add a simple 'STANDBY' overlay to preview frames."""
@@ -143,113 +334,6 @@ class CCTVRunner:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 100), 2,
                     cv2.LINE_AA)
 
-    # ── Trip Mode (Full Detection) ────────────────────────────────────────────
-
-    def start_trip_mode(self, user_id, trip_session_id, on_alert_callback=None):
-        """Start full detection pipeline."""
-        if self._trip_running:
-            return
-        self._preview_running = False   # stop preview loop
-        time.sleep(0.2)
-
-        if not self.start_camera():
-            return
-
-        self._user_id = user_id
-        self._trip_session_id = trip_session_id
-        self._on_alert_callback = on_alert_callback
-        self._trip_running = True
-
-        # Load detection modules
-        print("[CCTV] Loading detection modules...")
-        self._detector = MotionDetector()
-        self._pet_filter = PetFilter()
-        if self._recognizer is None:
-            self._recognizer = FaceRecognizer()
-        self._alerter = AlertSystem()
-
-        # Register capture callback
-        set_capture_callback(self._handle_capture)
-
-        self._trip_thread = threading.Thread(target=self._trip_loop, daemon=True)
-        self._trip_thread.start()
-        print("[CCTV] Trip mode ACTIVE — full detection running.")
-
-    def stop_trip_mode(self):
-        """Stop detection, go back to preview."""
-        self._trip_running = False
-        set_capture_callback(None)
-        if self._trip_thread:
-            self._trip_thread.join(timeout=5)
-            self._trip_thread = None
-        self._alerter = None
-        self._detector = None
-        self._pet_filter = None
-        print("[CCTV] Trip mode stopped.")
-        # Restart preview
-        self.start_preview()
-
-    def _trip_loop(self):
-        """Full detection pipeline loop — mirrors main.py logic."""
-        frame_counter = 0
-        last_face_results = []
-
-        while self._trip_running:
-            with self._camera_lock:
-                if self._camera is None or not self._camera.isOpened():
-                    break
-                ret, frame = self._camera.read()
-            if not ret:
-                time.sleep(0.05)
-                continue
-
-            # ── Detection pipeline ────────────────────────────────────────────
-            contours, _ = self._detector.detect(frame)
-            motion_detected = len(contours) > 0
-            person_contours, pet_contours = self._pet_filter.filter(contours)
-
-            # Draw motion boxes
-            if config.SHOW_MOTION_BOXES:
-                for c in person_contours:
-                    x, y, bw, bh = self._pet_filter.get_bounding_box(c)
-                    cv2.rectangle(frame, (x, y), (x+bw, y+bh),
-                                  config.COLOR_HIGH, 2)
-                for c in pet_contours:
-                    x, y, bw, bh = self._pet_filter.get_bounding_box(c)
-                    cv2.rectangle(frame, (x, y), (x+bw, y+bh),
-                                  config.COLOR_LOW, 1)
-
-            # Face recognition with frame skip
-            clean_frame = frame.copy()
-            frame_counter += 1
-            run_face = (bool(person_contours) and
-                        frame_counter % config.FACE_DETECT_EVERY_N_FRAMES == 0)
-
-            if run_face:
-                last_face_results = self._recognizer.identify_faces(frame)
-
-            face_results = last_face_results
-
-            if face_results:
-                self._recognizer.draw_face_boxes(frame, face_results)
-
-            if not person_contours:
-                last_face_results = []
-
-            # Alert evaluation
-            alert_level, message = self._alerter.evaluate(
-                clean_frame, frame, motion_detected,
-                person_contours, face_results
-            )
-
-            # Add CCTV overlay
-            self._add_trip_overlay(frame, alert_level, message)
-
-            with self._frame_lock:
-                self._latest_frame = frame
-
-            time.sleep(1.0 / config.FPS_TARGET)
-
     def _add_trip_overlay(self, frame, alert_level, message):
         """Add monitoring overlay to trip mode frames."""
         h, w = frame.shape[:2]
@@ -269,7 +353,7 @@ class CCTVRunner:
         cv2.putText(frame, f"[{alert_level}] {message}", (8, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
-        # MONITORING badge (green pulse)
+        # MONITORING badge
         cv2.putText(frame, "MONITORING", (w - 140, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 100), 2,
                     cv2.LINE_AA)
@@ -307,17 +391,17 @@ class CCTVRunner:
 
     @property
     def is_trip_active(self):
-        return self._trip_running
+        return self._mode == self.MODE_TRIP
 
     @property
     def is_preview_active(self):
-        return self._preview_running
+        return self._mode == self.MODE_PREVIEW
 
     def shutdown(self):
         """Clean shutdown."""
-        self._trip_running = False
-        self._preview_running = False
-        time.sleep(0.3)
+        with self._mode_lock:
+            self._mode = self.MODE_OFF
+        self._stop_loop()
         self.stop_camera()
         print("[CCTV] Shutdown complete.")
 
