@@ -65,3 +65,4 @@ webapp/database.db-shm
 !.gitkeep
 !known_faces/.gitkeep
 !alerts/.gitkeep
+!evidence/.gitkeep

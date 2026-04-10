@@ -40,16 +40,25 @@ SafeStep/
 |
 |-- config.py                  # Central configuration (camera, thresholds, paths)
 |-- main.py                    # Standalone CLI surveillance runner
+|-- requirements.txt           # Python dependencies
+|-- README.md
+|
 |-- motion_detection.py        # Background subtraction motion detector
 |-- pet_filter.py              # Filters small contours (pets, noise)
 |-- face_recognition_module.py # InsightFace face detection and recognition
 |-- alert_system.py            # Alert level evaluation and evidence capture
 |-- add_face.py                # CLI tool to register known faces
-|-- requirements.txt           # Python dependencies
 |
 |-- utils/
 |   |-- __init__.py
 |   |-- helpers.py             # Shared utilities (FPS counter, evidence save, cleanup)
+|
+|-- tools/
+|   |-- test_email.py          # EmailJS integration diagnostic
+|   |-- diagnose.py            # System diagnostic script
+|   |-- diagnose_face.py       # Face recognition diagnostic
+|   |-- fix_known_face.py      # Utility to fix/re-encode known face embeddings
+|   |-- view_alerts.py         # CLI alert log viewer
 |
 |-- webapp/
 |   |-- __init__.py
@@ -76,13 +85,7 @@ SafeStep/
 |
 |-- known_faces/               # Store known face images here (not tracked by git)
 |-- evidence/                  # Auto-generated evidence captures (not tracked by git)
-|-- alerts/
-|   |-- alert_log.txt          # Plain-text alert log (not tracked by git)
-|
-|-- test_email.py              # EmailJS integration diagnostic tool
-|-- diagnose.py                # System diagnostic script
-|-- diagnose_face.py           # Face recognition diagnostic script
-|-- fix_known_face.py          # Utility to fix/re-encode known face embeddings
+|-- alerts/                    # Runtime alert logs (not tracked by git)
 ```
 
 ---
@@ -254,7 +257,7 @@ Email notifications are sent through the [EmailJS](https://www.emailjs.com/) RES
 Run the diagnostic script to verify your EmailJS configuration:
 
 ```bash
-python test_email.py
+python tools/test_email.py
 ```
 
 ---
