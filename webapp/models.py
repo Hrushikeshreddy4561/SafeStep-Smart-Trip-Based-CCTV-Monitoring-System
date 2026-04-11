@@ -7,6 +7,7 @@ import sqlite3
 import os
 import json
 import datetime
+import re
 import bcrypt
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database.db")
@@ -60,10 +61,29 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (trip_session_id) REFERENCES trip_sessions(id)
         );
+
+        CREATE TABLE IF NOT EXISTS known_face_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            person_key TEXT NOT NULL,
+            person_name TEXT NOT NULL,
+            last_seen_camera TIMESTAMP,
+            last_seen_alert TIMESTAMP,
+            last_alert_image TEXT DEFAULT '',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id, person_key)
+        );
     """)
     conn.commit()
     conn.close()
     print("[DB] Database initialized.")
+
+
+def _person_key(name):
+    cleaned = re.sub(r'[^a-zA-Z0-9\s_-]', '', (name or '').strip())
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.lower().replace(' ', '_')
 
 
 # ─── User Operations ─────────────────────────────────────────────────────────
@@ -225,6 +245,29 @@ def get_alerts_for_user(user_id, limit=50):
     return alerts
 
 
+def delete_alert_for_user(alert_id, user_id):
+    """Delete one alert owned by user. Returns number of deleted rows."""
+    conn = get_db()
+    cur = conn.execute(
+        "DELETE FROM alerts WHERE id=? AND user_id=?",
+        (alert_id, user_id)
+    )
+    conn.commit()
+    deleted = cur.rowcount
+    conn.close()
+    return deleted
+
+
+def delete_all_alerts_for_user(user_id):
+    """Delete all alerts for user. Returns number of deleted rows."""
+    conn = get_db()
+    cur = conn.execute("DELETE FROM alerts WHERE user_id=?", (user_id,))
+    conn.commit()
+    deleted = cur.rowcount
+    conn.close()
+    return deleted
+
+
 def get_unreviewed_count(user_id):
     conn = get_db()
     row = conn.execute(
@@ -258,3 +301,76 @@ def get_total_stats(user_id):
     ).fetchone()['cnt']
     conn.close()
     return {"total_trips": total_trips, "total_alerts": total_alerts}
+
+
+# ─── Known Face Activity ─────────────────────────────────────────────────────
+
+def upsert_known_face_activity(user_id, person_name,
+                               seen_in_camera=False,
+                               seen_in_alert=False,
+                               alert_image=""):
+    """Update per-person last-seen fields for known faces."""
+    key = _person_key(person_name)
+    if not key:
+        return
+
+    now = datetime.datetime.now().isoformat()
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO known_face_activity
+           (user_id, person_key, person_name, last_seen_camera, last_seen_alert,
+            last_alert_image, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, person_key)
+           DO UPDATE SET
+              person_name=excluded.person_name,
+              last_seen_camera=CASE WHEN excluded.last_seen_camera IS NOT NULL
+                 THEN excluded.last_seen_camera ELSE known_face_activity.last_seen_camera END,
+              last_seen_alert=CASE WHEN excluded.last_seen_alert IS NOT NULL
+                 THEN excluded.last_seen_alert ELSE known_face_activity.last_seen_alert END,
+              last_alert_image=CASE WHEN excluded.last_alert_image <> ''
+                 THEN excluded.last_alert_image ELSE known_face_activity.last_alert_image END,
+              updated_at=excluded.updated_at
+        """,
+        (
+            user_id,
+            key,
+            person_name,
+            now if seen_in_camera else None,
+            now if seen_in_alert else None,
+            alert_image or "",
+            now
+        )
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_known_face_activity_map(user_id):
+    """Return map: person_key -> activity row dict."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT person_key, person_name, last_seen_camera,
+                  last_seen_alert, last_alert_image
+           FROM known_face_activity WHERE user_id=?""",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+
+    result = {}
+    for row in rows:
+        result[row['person_key']] = dict(row)
+    return result
+
+
+def delete_known_face_activity(user_id, person_name):
+    key = _person_key(person_name)
+    if not key:
+        return
+    conn = get_db()
+    conn.execute(
+        "DELETE FROM known_face_activity WHERE user_id=? AND person_key=?",
+        (user_id, key)
+    )
+    conn.commit()
+    conn.close()

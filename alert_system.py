@@ -59,7 +59,7 @@ from utils.helpers import readable_time
 _on_capture_callback = None
 
 def set_capture_callback(callback):
-    """Register a function(face_paths, body_path, level) for capture events."""
+    """Register a function(face_paths, body_path, level, familiar_names)."""
     global _on_capture_callback
     _on_capture_callback = callback
 
@@ -138,7 +138,8 @@ def _save_pair(clean_frame, annotated_frame, alert_level, face_boxes):
 
             suffix    = f"_face{idx}" if len(face_boxes) > 1 else ""
             face_path = fp("FACE", suffix)
-            cv2.imwrite(face_path, crop)   # clean — no text overlaid
+            cv2.imwrite(face_path,
+                        _burn_bar(crop, f"FACE | {alert_level} | unknown"))
             face_paths.append(face_path)
 
     # ── BODY: full annotated frame + timestamp bar ────────────────────────────
@@ -346,7 +347,10 @@ class AlertSystem:
                     # Notify web app (if callback registered)
                     if _on_capture_callback:
                         try:
-                            _on_capture_callback(face_paths, body_path, level)
+                            familiar_names = sorted({
+                                f['name'] for f in face_results if f.get('familiar') and f.get('name')
+                            })
+                            _on_capture_callback(face_paths, body_path, level, familiar_names)
                         except Exception as e:
                             print(f"[ALERT] Capture callback error: {e}")
 

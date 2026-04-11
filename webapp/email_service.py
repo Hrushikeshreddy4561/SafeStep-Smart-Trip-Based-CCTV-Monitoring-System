@@ -9,7 +9,10 @@ import datetime
 import requests
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+WEBAPP_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(WEBAPP_DIR)
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+load_dotenv(os.path.join(WEBAPP_DIR, ".env"))
 
 EMAILJS_API_URL = "https://api.emailjs.com/api/v1.0/email/send"
 EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")

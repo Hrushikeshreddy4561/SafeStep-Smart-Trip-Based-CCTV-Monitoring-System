@@ -669,6 +669,180 @@ a:hover { color: #79b8ff; }
     padding: 0.65rem 0.85rem;
 }
 
+/* ─── Known Faces Page ───────────────────────────────────────────────────── */
+.known-faces-container {
+    max-width: 1200px;
+}
+
+.known-faces-grid {
+    display: grid;
+    grid-template-columns: 330px 1fr;
+    gap: 1rem;
+}
+
+.known-face-form {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.camera-capture-card {
+    margin-bottom: 0.7rem;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 0.7rem;
+}
+
+.camera-capture-card label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.45rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.camera-capture-preview-wrap {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--border-glass);
+    background: #000;
+}
+
+.camera-capture-preview {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+}
+
+.camera-capture-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+}
+
+.capture-status-text {
+    margin-top: 0.45rem;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+}
+
+.known-faces-note {
+    margin-top: 0.9rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.7rem;
+}
+
+.known-face-list {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.known-face-item {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    align-items: center;
+    gap: 0.75rem;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 0.55rem;
+}
+
+.known-face-thumb {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-glass);
+}
+
+.known-face-meta h4 {
+    font-size: 0.9rem;
+    margin-bottom: 0.15rem;
+}
+
+.known-face-meta p {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    word-break: break-all;
+}
+
+/* ─── Logs Page ─────────────────────────────────────────────────────────── */
+.logs-container {
+    max-width: 1000px;
+}
+
+.logs-list {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.log-item {
+    padding: 1rem;
+}
+
+.log-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-glass);
+    padding-bottom: 0.6rem;
+}
+
+.log-item-head h3 {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.log-status {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.25rem 0.55rem;
+    border-radius: 50px;
+    letter-spacing: 0.4px;
+}
+
+.log-active {
+    color: var(--accent-green);
+    background: var(--accent-green-dim);
+    border: 1px solid rgba(63, 185, 80, 0.25);
+}
+
+.log-completed {
+    color: var(--text-secondary);
+    background: rgba(139, 148, 158, 0.14);
+    border: 1px solid rgba(139, 148, 158, 0.25);
+}
+
+.log-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.7rem;
+}
+
+.log-label {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 0.2rem;
+}
+
+.log-value {
+    font-size: 0.86rem;
+    color: var(--text-primary);
+}
+
 /* ─── Alerts Page ────────────────────────────────────────────────────────── */
 .alerts-header {
     display: flex;
@@ -989,6 +1163,11 @@ a:hover { color: #79b8ff; }
     .face-gallery { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
     .camera-controls { grid-template-columns: 1fr; }
     .dashboard-grid { gap: 1rem; }
+    .known-faces-grid { grid-template-columns: 1fr; }
+    .known-face-item { grid-template-columns: 56px 1fr; }
+    .known-face-thumb { width: 56px; height: 56px; }
+    .camera-capture-actions { grid-template-columns: 1fr; }
+    .log-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {

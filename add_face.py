@@ -64,10 +64,10 @@ def _sharpness(img):
 
 def _sharpness_label(score):
     if score < 80:
-        return "BLURRY", (0, 0, 255)
+        return "BLURRY", (0, 0, 0)
     if score < 200:
-        return "OK", (0, 165, 255)
-    return "SHARP", (0, 200, 0)
+        return "OK", (0, 0, 0)
+    return "SHARP", (0, 0, 0)
 
 
 # ─── Model loader (called ONCE in main) ───────────────────────────────────────
@@ -78,7 +78,7 @@ def _load_insightface():
         return None
     print("[INFO] Loading InsightFace model...")
     app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
-    app.prepare(ctx_id=0, det_size=(320, 320))
+    app.prepare(ctx_id=0, det_size=(160, 160))
     print("[INFO] Model ready.\n")
     return app
 
@@ -147,6 +147,8 @@ def capture_from_webcam(name, app):
     )
 
     cap = cv2.VideoCapture(config.CAMERA_INDEX)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     if not cap.isOpened():
         print("[ERROR] Cannot open webcam.")
         return False
@@ -175,23 +177,22 @@ def capture_from_webcam(name, app):
         for (x, y, bw, bh) in haar_boxes:
             cv2.rectangle(disp, (x, y), (x+bw, y+bh), (255, 100, 0), 1)
 
-        # Guide box
-        cv2.rectangle(disp, (cx-110, cy-130), (cx+110, cy+130), (0, 255, 0), 2)
+        # Guide box — large so the face is easy to centre
+        cv2.rectangle(disp, (cx-150, cy-170), (cx+150, cy+170), (0, 255, 0), 2)
         cv2.putText(disp, "Centre face in box",
-                    (cx - 90, cy - 145),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 255, 0), 1)
+                    (cx - 90, cy - 185),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 0, 0), 1)
 
-        # Quality HUD
+        # Quality HUD — all text in black
         s_label, s_color = _sharpness_label(live_sharp)
         face_count = len(haar_boxes)
-        f_color    = (0, 200, 0) if face_count == 1 else (0, 100, 255)
 
         cv2.putText(disp, f"Faces: {face_count}",
-                    (10, h - 52), cv2.FONT_HERSHEY_SIMPLEX, 0.48, f_color, 1)
+                    (10, h - 52), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 1)
         cv2.putText(disp, f"Sharp: {live_sharp:.0f}  {s_label}",
-                    (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX, 0.48, s_color, 1)
+                    (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 1)
         cv2.putText(disp, "SPACE=Capture   ESC=Cancel",
-                    (10, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 0), 1)
+                    (10, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 1)
 
         cv2.imshow("Add Known Face", disp)
         key = cv2.waitKey(1) & 0xFF
@@ -201,22 +202,17 @@ def capture_from_webcam(name, app):
             break
 
         elif key == 32:
-            # Best-of-3: grab 3 quick frames, pick the sharpest
-            print("[INFO] Capturing (best-of-3 frames)...")
-            candidates = []
-            for _ in range(3):
-                ok, f = cap.read()
-                if ok:
-                    candidates.append((f, _sharpness(f)))
-
-            if not candidates:
+            # Quick single-frame capture for speed
+            print("[INFO] Capturing...")
+            ok, snap = cap.read()
+            if not ok:
                 print("  [WARN] Failed to read frame — try again.")
                 continue
 
-            best_frame, best_sharp = max(candidates, key=lambda x: x[1])
-            print(f"  Best sharpness: {best_sharp:.0f}")
+            snap_sharp = _sharpness(snap)
+            print(f"  Sharpness: {snap_sharp:.0f}")
 
-            saved = _validate_and_save(app, best_frame, name)
+            saved = _validate_and_save(app, snap, name)
             if saved:
                 break
             # Validation failed — keep preview open for retry

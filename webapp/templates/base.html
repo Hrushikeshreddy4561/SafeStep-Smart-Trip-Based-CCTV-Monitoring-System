@@ -23,6 +23,12 @@
                     🔔 Alerts
                     <span class="nav-badge" id="nav-alert-count" style="display: none;">0</span>
                 </a>
+                <a href="{{ url_for('main.known_faces_page') }}" class="{{ 'active' if request.endpoint == 'main.known_faces_page' }}">
+                    👥 Known Faces
+                </a>
+                <a href="{{ url_for('main.logs_page') }}" class="{{ 'active' if request.endpoint == 'main.logs_page' }}">
+                    🧾 Logs
+                </a>
                 <a href="{{ url_for('auth.logout') }}">
                     Logout
                 </a>

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}SafeStep — Session Logs{% endblock %}
+
+{% block content %}
+<div class="page-container logs-container">
+    <div class="alerts-header animate-fade-in" style="align-items: flex-start; gap: 0.75rem;">
+        <div>
+            <h1>🧾 Trip Session Logs</h1>
+            <p style="color: var(--text-muted); font-size: 0.82rem; margin-top: 0.2rem;">
+                Last 5 monitoring sessions with start time, end time, status, and total duration.
+            </p>
+        </div>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline">← Back to Dashboard</a>
+    </div>
+
+    {% if sessions %}
+    <div class="logs-list">
+        {% for s in sessions %}
+        <div class="log-item card animate-fade-in-up">
+            <div class="log-item-head">
+                <h3>Session #{{ s.id }}</h3>
+                <span class="log-status {{ 'log-active' if s.status == 'active' else 'log-completed' }}">
+                    {{ s.status|upper }}
+                </span>
+            </div>
+            <div class="log-grid">
+                <div>
+                    <p class="log-label">Started</p>
+                    <p class="log-value">{{ s.start_time[:19].replace('T', ' ') if s.start_time else '-' }}</p>
+                </div>
+                <div>
+                    <p class="log-label">Ended</p>
+                    <p class="log-value">{{ s.end_time[:19].replace('T', ' ') if s.end_time else 'In progress' }}</p>
+                </div>
+                <div>
+                    <p class="log-label">Duration</p>
+                    <p class="log-value">{{ s.duration }}</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card empty-state" style="padding: 2rem;">
+        <div class="empty-icon">🕘</div>
+        <h3>No sessions yet</h3>
+        <p>Start trip mode to generate monitoring session logs.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

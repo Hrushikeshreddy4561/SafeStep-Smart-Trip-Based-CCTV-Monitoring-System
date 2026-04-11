@@ -18,10 +18,10 @@
             <!-- Camera Feed -->
             <div class="card animate-fade-in-up" style="padding: 0; overflow: hidden; margin-bottom: 1.25rem;">
                 <div class="camera-container" id="camera-container">
-                    <img src="{{ url_for('main.video_feed') }}" class="camera-feed" id="camera-feed"
-                         alt="Live Camera Feed"
+                    <img src="" class="camera-feed" id="camera-feed"
+                         alt="Live Camera Feed" style="display: none;"
                          onerror="this.style.display='none'; document.getElementById('camera-offline').style.display='flex';">
-                    <div class="camera-offline" id="camera-offline" style="display: none;">
+                    <div class="camera-offline" id="camera-offline" style="display: flex;">
                         <span class="icon">📷</span>
                         <span>Camera is offline</span>
                         <button class="btn btn-outline" style="margin-top: 0.5rem; font-size: 0.82rem;" onclick="startCamera()">
@@ -110,6 +110,12 @@
                         <span class="nav-badge">{{ unreviewed }}</span>
                         {% endif %}
                     </a>
+                    <a href="{{ url_for('main.known_faces_page') }}" class="btn btn-outline">
+                        👥 Known Faces
+                    </a>
+                    <a href="{{ url_for('main.logs_page') }}" class="btn btn-outline">
+                        🧾 Session Logs
+                    </a>
                     <a href="tel:{{ current_user.police_phone or '100' }}" class="emergency-btn">
                         🚨 Emergency: {{ current_user.police_phone or '100' }}
                     </a>
@@ -123,9 +129,9 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/app.js') }}?v={{ range(10000,99999) | random }}"></script>
 <script>
-    // Auto-start camera preview on page load
+    // Camera starts OFF — user must click Preview or start Trip Mode
     document.addEventListener('DOMContentLoaded', () => {
-        startCamera();
+        updateCameraStatus('offline');
         pollStatus();
         setInterval(pollStatus, 5000);
     });

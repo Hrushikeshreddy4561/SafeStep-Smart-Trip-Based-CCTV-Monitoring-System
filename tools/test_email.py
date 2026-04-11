@@ -7,8 +7,11 @@ import sys
 import requests
 from dotenv import load_dotenv
 
-# Load .env from webapp folder
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp", ".env"))
+# Load .env from project root first, then optional webapp/.env fallback
+TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(TOOLS_DIR)
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, "webapp", ".env"))
 
 PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
 SERVICE_ID = os.getenv("EMAILJS_SERVICE_ID", "")
