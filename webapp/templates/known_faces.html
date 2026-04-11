@@ -18,10 +18,15 @@
             <div class="card-header">
                 <h3 class="card-title">➕ Add Face</h3>
             </div>
+            {% if trip_active %}
+            <div class="flash-message flash-error" style="margin-bottom: 0.75rem;">
+                Trip Mode is active. Stop Trip Mode to add a new face.
+            </div>
+            {% endif %}
             <form method="POST" action="{{ url_for('main.add_known_face') }}" enctype="multipart/form-data" class="known-face-form">
                 <div class="form-group">
                     <label for="person_name">Person Name</label>
-                    <input id="person_name" name="person_name" type="text" placeholder="e.g. Ramesh Kumar" required>
+                    <input id="person_name" name="person_name" type="text" placeholder="e.g. Ramesh Kumar" required {% if trip_active %}disabled{% endif %}>
                 </div>
 
                 <div class="camera-capture-card">
@@ -31,8 +36,8 @@
                         <img id="capture-photo-preview" class="camera-capture-preview" alt="Captured preview" style="display:none;">
                     </div>
                     <div class="camera-capture-actions">
-                        <button type="button" id="btn-start-capture-camera" class="btn btn-outline">Start Camera</button>
-                        <button type="button" id="btn-capture-photo" class="btn btn-outline" disabled>Capture Photo</button>
+                        <button type="button" id="btn-start-capture-camera" class="btn btn-outline" {% if trip_active %}disabled{% endif %}>Start Camera</button>
+                        <button type="button" id="btn-capture-photo" class="btn btn-outline" disabled {% if trip_active %}disabled{% endif %}>Capture Photo</button>
                     </div>
                     <p id="capture-status" class="capture-status-text">Use upload below or capture from webcam.</p>
                     <canvas id="capture-canvas" style="display:none;"></canvas>
@@ -40,10 +45,10 @@
 
                 <div class="form-group">
                     <label for="face_image">Face Image</label>
-                    <input id="face_image" name="face_image" type="file" accept=".jpg,.jpeg,.png,.bmp,image/*" required>
+                    <input id="face_image" name="face_image" type="file" accept=".jpg,.jpeg,.png,.bmp,image/*" required {% if trip_active %}disabled{% endif %}>
                 </div>
 
-                <button type="submit" class="btn btn-success" style="width: 100%;">
+                <button type="submit" class="btn btn-success" style="width: 100%;" {% if trip_active %}disabled{% endif %}>
                     Save Known Face
                 </button>
             </form>
@@ -107,14 +112,23 @@
         const photoPreview = document.getElementById('capture-photo-preview');
         const faceInput = document.getElementById('face_image');
         const statusEl = document.getElementById('capture-status');
+        const tripActive = {{ 'true' if trip_active else 'false' }};
 
         let stream = null;
+
+        if (!tripActive) {
+            fetch('/api/camera/stop', { method: 'POST' }).catch(() => {});
+        }
 
         function setStatus(text) {
             statusEl.textContent = text;
         }
 
         async function startCamera() {
+            if (tripActive) {
+                setStatus('Stop Trip Mode before capturing a new face.');
+                return;
+            }
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 setStatus('Camera access is not supported in this browser.');
                 return;
@@ -173,6 +187,9 @@
         window.addEventListener('beforeunload', function() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
+            }
+            if (!tripActive) {
+                fetch('/api/camera/start', { method: 'POST', keepalive: true }).catch(() => {});
             }
         });
     })();

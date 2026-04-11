@@ -77,6 +77,7 @@ async function toggleTripMode(enabled) {
                     statusBadge.className = 'trip-status active';
                     statusBadge.textContent = '🟢 MONITORING';
                 }
+                setKnownFacesButtonDisabled(true);
                 if (duration) {
                     duration.style.display = 'block';
                     duration.textContent = '0h 0m 0s';
@@ -106,16 +107,19 @@ async function toggleTripMode(enabled) {
                     statusBadge.className = 'trip-status inactive';
                     statusBadge.textContent = '⏸ STANDBY';
                 }
+                setKnownFacesButtonDisabled(false);
                 if (duration) duration.style.display = 'none';
-                updateCameraStatus('offline');
+                updateCameraStatus('standby');
 
                 const feed = document.getElementById('camera-feed');
                 const offline = document.getElementById('camera-offline');
                 if (feed) {
-                    feed.src = '';
-                    feed.style.display = 'none';
+                    setTimeout(() => {
+                        feed.src = '/video_feed?' + Date.now();
+                        feed.style.display = 'block';
+                    }, 400);
                 }
-                if (offline) offline.style.display = 'flex';
+                if (offline) offline.style.display = 'none';
             }
         }
     } catch (e) {
@@ -141,10 +145,13 @@ async function pollStatus() {
         // Update camera status
         if (data.trip_active) {
             updateCameraStatus('monitoring');
+            setKnownFacesButtonDisabled(true);
         } else if (data.camera_on) {
             updateCameraStatus('standby');
+            setKnownFacesButtonDisabled(false);
         } else {
             updateCameraStatus('offline');
+            setKnownFacesButtonDisabled(false);
         }
 
         // Update trip toggle (only if not mid-toggle)
@@ -222,4 +229,31 @@ function updateCameraStatus(status) {
             badge.classList.add('status-standby');
             text.textContent = 'CONNECTING';
     }
+}
+
+function setKnownFacesButtonDisabled(disabled) {
+    const targets = [
+        document.getElementById('btn-known-faces'),
+        document.getElementById('nav-known-faces-link')
+    ].filter(Boolean);
+
+    targets.forEach((btn) => {
+        if (!btn.dataset.href) {
+            btn.dataset.href = btn.getAttribute('href') || '';
+        }
+
+        if (disabled) {
+            btn.setAttribute('href', '#');
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.45';
+            btn.style.cursor = 'not-allowed';
+            btn.title = 'Stop Trip Mode to access Known Faces';
+        } else {
+            btn.setAttribute('href', btn.dataset.href);
+            btn.style.pointerEvents = '';
+            btn.style.opacity = '';
+            btn.style.cursor = '';
+            btn.title = '';
+        }
+    });
 }

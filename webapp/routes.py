@@ -186,6 +186,7 @@ def delete_all_alerts():
 @main_bp.route('/known-faces')
 @login_required
 def known_faces_page():
+    trip_active = cctv_runner.is_trip_active or bool(get_active_trip(current_user.id))
     known_faces = _load_known_faces()
     activity_map = get_known_face_activity_map(current_user.id)
     for face in known_faces:
@@ -193,7 +194,8 @@ def known_faces_page():
         activity = activity_map.get(person_key, {})
         face['last_seen_camera'] = activity.get('last_seen_camera')
         face['last_seen_alert'] = activity.get('last_seen_alert')
-    return render_template('known_faces.html', known_faces=known_faces)
+    return render_template('known_faces.html', known_faces=known_faces,
+                           trip_active=trip_active)
 
 
 @main_bp.route('/known-faces/image/<path:filename>')
@@ -206,6 +208,10 @@ def known_faces_image(filename):
 @main_bp.route('/known-faces/add', methods=['POST'])
 @login_required
 def add_known_face():
+    if cctv_runner.is_trip_active or get_active_trip(current_user.id):
+        flash('Stop Trip Mode before adding a new face.', 'error')
+        return redirect(url_for('main.known_faces_page'))
+
     person_name = (request.form.get('person_name') or '').strip()
     face_image = request.files.get('face_image')
 
