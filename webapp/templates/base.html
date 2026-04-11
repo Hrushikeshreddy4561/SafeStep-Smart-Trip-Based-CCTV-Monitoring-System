@@ -23,7 +23,7 @@
                     🔔 Alerts
                     <span class="nav-badge" id="nav-alert-count" style="display: none;">0</span>
                 </a>
-                <a href="{{ url_for('main.known_faces_page') }}" class="{{ 'active' if request.endpoint == 'main.known_faces_page' }}">
+                <a href="{{ url_for('main.known_faces_page') }}" id="nav-known-faces-link" class="{{ 'active' if request.endpoint == 'main.known_faces_page' }}">
                     👥 Known Faces
                 </a>
                 <a href="{{ url_for('main.logs_page') }}" class="{{ 'active' if request.endpoint == 'main.logs_page' }}">
@@ -52,11 +52,37 @@
     {% block scripts %}{% endblock %}
 
     <script>
+        function setNavKnownFacesDisabled(disabled) {
+            const link = document.getElementById('nav-known-faces-link');
+            if (!link) return;
+
+            if (!link.dataset.href) {
+                link.dataset.href = link.getAttribute('href') || '';
+            }
+
+            if (disabled) {
+                link.setAttribute('href', '#');
+                link.style.pointerEvents = 'none';
+                link.style.opacity = '0.45';
+                link.style.cursor = 'not-allowed';
+                link.title = 'Stop Trip Mode to access Known Faces';
+            } else {
+                link.setAttribute('href', link.dataset.href);
+                link.style.pointerEvents = '';
+                link.style.opacity = '';
+                link.style.cursor = '';
+                link.title = '';
+            }
+        }
+
         // Update alert badge count
         async function updateAlertBadge() {
             try {
                 const resp = await fetch('/api/status');
                 const data = await resp.json();
+
+                setNavKnownFacesDisabled(Boolean(data.trip_active));
+
                 const badge = document.getElementById('nav-alert-count');
                 if (badge && data.unreviewed_alerts > 0) {
                     badge.textContent = data.unreviewed_alerts;

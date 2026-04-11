@@ -303,18 +303,17 @@ class CCTVRunner:
         return True
 
     def stop_trip_mode(self):
-        """Stop trip mode and turn camera off."""
+        """Stop trip mode and return to preview mode."""
         set_capture_callback(None)
 
-        # Turn everything off when trip mode ends.
+        # Return to preview mode so camera stays available in dashboard.
         with self._mode_lock:
-            self._mode = self.MODE_OFF
+            self._mode = self.MODE_PREVIEW
 
-        self._stop_loop()
-        self.stop_camera()
-
-        with self._frame_lock:
-            self._latest_frame = None
+        # Ensure loop/camera are running in case of unexpected state.
+        if not self.is_camera_on:
+            self.start_camera()
+        self._start_loop()
 
         # Clean up per-trip modules (but keep FaceRecognizer alive)
         self._alerter = None
@@ -322,7 +321,7 @@ class CCTVRunner:
         self._pet_filter = None
         self._familiar_emit_cache = {}
 
-        print("[CCTV] Trip mode stopped. Camera OFF.")
+        print("[CCTV] Trip mode stopped -> Preview.")
 
     # ── Overlays ──────────────────────────────────────────────────────────────
 
