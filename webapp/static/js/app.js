@@ -1,7 +1,12 @@
 /**
- * app.js — Dashboard Logic (v2)
- * Handles trip mode toggle, camera controls, and status polling.
- * Optimised: loading states, faster polling, smoother transitions.
+ * app.js — Dashboard Logic (v3 — WebSocket + Optimized)
+ *
+ * Changes from v2:
+ *   - Uses WebSocket (Socket.IO) for instant status/alert updates
+ *   - Polling reduced to 15s safety net (WebSocket handles real-time)
+ *   - Camera feed auto-recovers on page navigation
+ *   - Trip toggle state synced from server on every status update
+ *   - Toast notifications for alerts pushed from base.html
  */
 
 // ── Camera Controls ──────────────────────────────────────────────────────────
@@ -11,12 +16,10 @@ async function startCamera() {
         const resp = await fetch('/api/camera/start', { method: 'POST' });
         const data = await resp.json();
         if (data.success) {
-            // Refresh the video feed — cache-bust + slight delay for buffer drain
             const feed = document.getElementById('camera-feed');
             const offline = document.getElementById('camera-offline');
             if (feed) {
                 feed.style.display = 'block';
-                // Small delay so the server has time to drain stale frames
                 setTimeout(() => {
                     feed.src = '/video_feed?' + Date.now();
                 }, 300);
@@ -35,7 +38,7 @@ async function stopCamera() {
         const feed = document.getElementById('camera-feed');
         const offline = document.getElementById('camera-offline');
         if (feed) {
-            feed.src = '';          // stop streaming immediately
+            feed.src = '';
             feed.style.display = 'none';
         }
         if (offline) offline.style.display = 'flex';
@@ -55,14 +58,12 @@ async function toggleTripMode(enabled) {
     const statusBadge = document.getElementById('trip-status-badge');
     const duration = document.getElementById('trip-duration');
 
-    // Prevent double-clicks while a request is in-flight
     if (_tripToggleBusy) {
         toggle.checked = !enabled;
         return;
     }
     _tripToggleBusy = true;
 
-    // Visual loading feedback
     if (statusBadge) {
         statusBadge.className = 'trip-status inactive';
         statusBadge.textContent = '⏳ Loading...';
@@ -83,7 +84,6 @@ async function toggleTripMode(enabled) {
                     duration.textContent = '0h 0m 0s';
                 }
                 updateCameraStatus('monitoring');
-                // Refresh feed — delay lets the server drain buffer + init pipeline
                 const feed = document.getElementById('camera-feed');
                 if (feed) {
                     setTimeout(() => {
@@ -135,7 +135,7 @@ async function toggleTripMode(enabled) {
 }
 
 
-// ── Status Polling ───────────────────────────────────────────────────────────
+// ── Status Sync (lightweight — WebSocket handles real-time) ──────────────────
 
 async function pollStatus() {
     try {
@@ -154,9 +154,11 @@ async function pollStatus() {
             setKnownFacesButtonDisabled(false);
         }
 
-        // Update trip toggle (only if not mid-toggle)
+        // Sync trip toggle with server state (fixes page-switch desync)
         const toggle = document.getElementById('trip-toggle');
-        if (toggle && !_tripToggleBusy) toggle.checked = data.trip_active;
+        if (toggle && !_tripToggleBusy) {
+            toggle.checked = data.trip_active;
+        }
 
         // Update trip duration
         const duration = document.getElementById('trip-duration');
@@ -197,9 +199,73 @@ async function pollStatus() {
             badge.style.display = 'none';
         }
 
+        // Auto-show feed if camera is on but feed is hidden (page navigation fix)
+        const feed = document.getElementById('camera-feed');
+        const offline = document.getElementById('camera-offline');
+        if (feed && data.camera_on && feed.style.display === 'none') {
+            feed.src = '/video_feed?' + Date.now();
+            feed.style.display = 'block';
+            if (offline) offline.style.display = 'none';
+        }
+
     } catch (e) {
         // Silent fail on poll
     }
+}
+
+
+// ── WebSocket Event Handlers (Dashboard-specific) ────────────────────────────
+
+function initDashboardSocket() {
+    const socket = getSocket();  // defined in base.html
+    if (!socket) return;
+
+    // Real-time status updates
+    socket.on('status_update', (data) => {
+        if (data.trip_active !== undefined) {
+            const toggle = document.getElementById('trip-toggle');
+            const statusBadge = document.getElementById('trip-status-badge');
+            const duration = document.getElementById('trip-duration');
+
+            if (toggle && !_tripToggleBusy) {
+                toggle.checked = data.trip_active;
+            }
+
+            if (data.trip_active) {
+                updateCameraStatus('monitoring');
+                setKnownFacesButtonDisabled(true);
+                if (statusBadge && !_tripToggleBusy) {
+                    statusBadge.className = 'trip-status active';
+                    statusBadge.textContent = '🟢 MONITORING';
+                }
+                if (duration) duration.style.display = 'block';
+            } else {
+                if (data.camera_on) {
+                    updateCameraStatus('standby');
+                } else {
+                    updateCameraStatus('offline');
+                }
+                setKnownFacesButtonDisabled(false);
+                if (statusBadge && !_tripToggleBusy) {
+                    statusBadge.className = 'trip-status inactive';
+                    statusBadge.textContent = '⏸ STANDBY';
+                }
+                if (duration) duration.style.display = 'none';
+            }
+        }
+    });
+
+    // Real-time alert — update stats
+    socket.on('new_alert', (data) => {
+        const alerts = document.getElementById('stat-alerts');
+        if (alerts) {
+            alerts.textContent = parseInt(alerts.textContent || '0') + 1;
+        }
+        const unrev = document.getElementById('stat-unreviewed');
+        if (unrev) {
+            unrev.textContent = parseInt(unrev.textContent || '0') + 1;
+        }
+    });
 }
 
 

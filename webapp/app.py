@@ -1,6 +1,11 @@
 """
 app.py — SafeStep CCTV Web Application
-Flask entry point. Run with: python -m webapp.app
+Flask + SocketIO entry point. Run with: python -m webapp.app
+
+Changes from v1:
+  - Flask-SocketIO replaces plain Flask for real-time push events
+  - Camera preview auto-starts on boot (no manual click needed)
+  - socketio instance exported for use in routes/cctv_runner
 """
 
 import os
@@ -23,6 +28,9 @@ PROJECT_ROOT = os.path.dirname(WEBAPP_DIR)
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 load_dotenv(os.path.join(WEBAPP_DIR, ".env"))
 
+# ── SocketIO instance (from shared extensions module) ────────────────────────
+from webapp.extensions import socketio
+
 
 def create_app():
     app = Flask(__name__,
@@ -30,6 +38,9 @@ def create_app():
                 static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'safestep-dev-key-change-me')
+
+    # ── Initialize SocketIO with app ─────────────────────────────────────
+    socketio.init_app(app)
 
     # ── Initialize database ───────────────────────────────────────────────
     from webapp.models import init_db
@@ -59,13 +70,26 @@ def create_app():
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown())
 
-    # ── Cleanup on exit ───────────────────────────────────────────────────
+    # ── Auto-start camera preview on boot ─────────────────────────────────
     from webapp.cctv_runner import cctv_runner
+    import threading
+
+    def _boot_camera():
+        """Start camera preview in background so it doesn't block app startup."""
+        import time
+        time.sleep(1.5)  # Let Flask finish binding to port first
+        cctv_runner.start_preview()
+        print("[BOOT] Camera preview auto-started.")
+
+    threading.Thread(target=_boot_camera, daemon=True).start()
+
+    # ── Cleanup on exit ───────────────────────────────────────────────────
     atexit.register(cctv_runner.shutdown)
 
     print("\n" + "=" * 55)
     print("  SafeStep -- Smart Trip-Based CCTV Monitor")
     print("  URL: http://localhost:5000")
+    print("  Real-Time: WebSocket enabled")
     print("=" * 55 + "\n")
 
     return app
@@ -73,4 +97,6 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    # Use socketio.run() instead of app.run() for WebSocket support
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False,
+                 use_reloader=False, allow_unsafe_werkzeug=True)

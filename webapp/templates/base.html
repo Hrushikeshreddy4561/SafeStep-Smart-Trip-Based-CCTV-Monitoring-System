@@ -47,11 +47,97 @@
         {% endif %}
     {% endwith %}
 
+    <!-- Toast Container for real-time notifications -->
+    <div id="toast-container"></div>
+
     {% block content %}{% endblock %}
+
+    <!-- Socket.IO Client (from CDN) -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
     {% block scripts %}{% endblock %}
 
     <script>
+        // ── Global WebSocket Connection ─────────────────────────────────────
+        let _socket = null;
+
+        function getSocket() {
+            if (_socket && _socket.connected) return _socket;
+            _socket = io({ transports: ['websocket', 'polling'] });
+
+            _socket.on('connect', () => {
+                console.log('[WS] Connected');
+            });
+
+            _socket.on('disconnect', () => {
+                console.log('[WS] Disconnected');
+            });
+
+            // Real-time status push (updates nav badge + known faces lock)
+            _socket.on('status_update', (data) => {
+                setNavKnownFacesDisabled(Boolean(data.trip_active));
+                // Update nav alert badge if available
+                if (data.unreviewed_alerts !== undefined) {
+                    _updateNavBadge(data.unreviewed_alerts);
+                }
+            });
+
+            // Real-time alert push — show toast notification
+            _socket.on('new_alert', (data) => {
+                showToast(
+                    `⚠️ ${data.alert_level} Alert`,
+                    `Unknown person detected at ${data.timestamp}`,
+                    'danger'
+                );
+                // Increment nav badge
+                const badge = document.getElementById('nav-alert-count');
+                if (badge) {
+                    let count = parseInt(badge.textContent || '0') + 1;
+                    badge.textContent = count;
+                    badge.style.display = 'inline';
+                }
+            });
+
+            // Familiar person sighted
+            _socket.on('familiar_seen', (data) => {
+                if (data.names && data.names.length > 0) {
+                    showToast(
+                        `👋 Known Person`,
+                        `${data.names.join(', ')} seen at ${data.timestamp}`,
+                        'info'
+                    );
+                }
+            });
+
+            return _socket;
+        }
+
+        // ── Toast Notification System ───────────────────────────────────────
+        function showToast(title, message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <strong>${title}</strong>
+                    <button class="toast-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                </div>
+                <div class="toast-body">${message}</div>
+            `;
+            container.appendChild(toast);
+
+            // Auto-remove after 8 seconds
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.classList.add('toast-fade-out');
+                    setTimeout(() => toast.remove(), 400);
+                }
+            }, 8000);
+        }
+
+        // ── Nav Helpers ─────────────────────────────────────────────────────
         function setNavKnownFacesDisabled(disabled) {
             const link = document.getElementById('nav-known-faces-link');
             if (!link) return;
@@ -75,26 +161,32 @@
             }
         }
 
-        // Update alert badge count
+        function _updateNavBadge(count) {
+            const badge = document.getElementById('nav-alert-count');
+            if (badge && count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline';
+            } else if (badge) {
+                badge.style.display = 'none';
+            }
+        }
+
+        // ── Lightweight status sync (fallback, runs less often) ─────────────
         async function updateAlertBadge() {
             try {
                 const resp = await fetch('/api/status');
                 const data = await resp.json();
-
                 setNavKnownFacesDisabled(Boolean(data.trip_active));
-
-                const badge = document.getElementById('nav-alert-count');
-                if (badge && data.unreviewed_alerts > 0) {
-                    badge.textContent = data.unreviewed_alerts;
-                    badge.style.display = 'inline';
-                } else if (badge) {
-                    badge.style.display = 'none';
-                }
+                _updateNavBadge(data.unreviewed_alerts);
             } catch (e) {}
         }
+
         {% if current_user.is_authenticated %}
+        // Initialize WebSocket connection on every authenticated page
+        getSocket();
+        // Light fallback poll every 30s (instead of 10s) as safety net
         updateAlertBadge();
-        setInterval(updateAlertBadge, 10000);
+        setInterval(updateAlertBadge, 30000);
         {% endif %}
     </script>
 </body>

@@ -1,6 +1,11 @@
 """
-email_service.py — EmailJS REST API Integration
+email_service.py — EmailJS REST API Integration (v2 — Supabase Cloud URLs)
 Sends intruder alert emails and daily summaries via EmailJS.
+
+v2 Changes:
+  - send_intruder_alert() now accepts optional cloud_face_urls and cloud_body_url
+  - If cloud URLs are available, they are used in the email (accessible anywhere)
+  - Falls back to local APP_URL/evidence/ links if Supabase upload failed
 """
 
 import os
@@ -50,24 +55,36 @@ def _send_email(template_id, template_params):
         return False
 
 
-def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level):
+def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level,
+                        cloud_face_urls=None, cloud_body_url=None):
     """
     Send an intruder alert email with captured face details.
 
     Parameters
     ----------
-    user       : dict-like user row (name, email)
-    alert_id   : int, the alert ID for the review link
-    face_paths : list of filenames (just the basename, not full path)
-    body_path  : str, body image filename
-    alert_level: str, e.g. 'HIGH' or 'CRITICAL'
+    user             : dict-like user row (name, email)
+    alert_id         : int, the alert ID for the review link
+    face_paths       : list of filenames (just the basename, not full path)
+    body_path        : str, body image filename
+    alert_level      : str, e.g. 'HIGH' or 'CRITICAL'
+    cloud_face_urls  : list of str, optional Supabase public URLs for face images
+    cloud_body_url   : str, optional Supabase public URL for body image
     """
     now = datetime.datetime.now()
     timestamp = now.strftime("%B %d, %Y at %I:%M %p")
 
-    # Build image URLs for the email
-    face_urls = [f"{APP_URL}/evidence/{os.path.basename(fp)}" for fp in face_paths]
-    body_url = f"{APP_URL}/evidence/{os.path.basename(body_path)}" if body_path else ""
+    # Use cloud URLs if available, otherwise fall back to local
+    if cloud_face_urls and cloud_face_urls[0]:
+        face_url_primary = cloud_face_urls[0]
+    else:
+        face_url_primary = (f"{APP_URL}/evidence/{os.path.basename(face_paths[0])}"
+                            if face_paths else "")
+
+    if cloud_body_url:
+        body_url = cloud_body_url
+    else:
+        body_url = (f"{APP_URL}/evidence/{os.path.basename(body_path)}"
+                    if body_path else "")
 
     review_link = f"{APP_URL}/alerts/{alert_id}"
 
@@ -89,7 +106,7 @@ def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level):
         "face_count": str(face_count),
         "alert_details": alert_details,
         "review_link": review_link,
-        "face_image_url": face_urls[0] if face_urls else "",
+        "face_image_url": face_url_primary,
         "body_image_url": body_url,
     }
 

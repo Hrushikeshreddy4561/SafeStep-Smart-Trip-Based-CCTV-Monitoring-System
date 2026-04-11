@@ -1,6 +1,12 @@
 """
-routes.py — Main Application Routes
+routes.py — Main Application Routes (v2 — Real-Time + Supabase)
 Dashboard, trip mode API, alert management, video streaming.
+
+Changes:
+  - Alert callback uploads evidence to Supabase Cloud Storage
+  - WebSocket events emitted for instant dashboard updates
+  - Trip toggle state synced from runner memory (fixes page-switch desync)
+  - Camera auto-recovers preview state on page navigation
 """
 
 import os
@@ -8,6 +14,7 @@ import sys
 import json
 import datetime
 import re
+import threading
 from flask import (Blueprint, render_template, request, jsonify, Response,
                    send_from_directory, redirect, url_for, flash)
 from flask_login import login_required, current_user
@@ -30,6 +37,7 @@ from webapp.models import (
 )
 from webapp.cctv_runner import cctv_runner
 from webapp.email_service import send_intruder_alert
+from webapp.supabase_storage import upload_evidence_image
 
 main_bp = Blueprint('main', __name__)
 
@@ -80,6 +88,15 @@ def _delete_evidence_file(filename):
         os.remove(full_path)
 
 
+def _emit_socketio(event, data):
+    """Emit a SocketIO event safely (guarded against import failure)."""
+    try:
+        from webapp.extensions import socketio
+        socketio.emit(event, data)
+    except Exception as e:
+        print(f"[WS] Emit error ({event}): {e}")
+
+
 # ─── Pages ────────────────────────────────────────────────────────────────────
 
 @main_bp.route('/')
@@ -92,11 +109,22 @@ def index():
 @main_bp.route('/dashboard')
 @login_required
 def dashboard():
+    # Sync: if runner says trip is active, make sure DB agrees
     trip = get_active_trip(current_user.id)
+    runner_trip_active = cctv_runner.is_trip_active
+
+    # Fix ghost sessions: DB says active but runner says no
+    if trip and not runner_trip_active:
+        end_trip_session(trip['id'])
+        trip = None
+
     stats = get_total_stats(current_user.id)
     unreviewed = get_unreviewed_count(current_user.id)
     return render_template('dashboard.html',
-                           trip=trip, stats=stats, unreviewed=unreviewed)
+                           trip=trip, stats=stats, unreviewed=unreviewed,
+                           runner_trip_active=runner_trip_active,
+                           camera_on=cctv_runner.is_camera_on,
+                           preview_active=cctv_runner.is_preview_active)
 
 
 @main_bp.route('/logs')
@@ -311,13 +339,21 @@ def serve_evidence(filename):
 @main_bp.route('/api/status')
 @login_required
 def api_status():
-    """Get current system status."""
+    """Get current system status — source of truth is the runner, not DB."""
     trip = get_active_trip(current_user.id)
     unreviewed = get_unreviewed_count(current_user.id)
     stats = get_total_stats(current_user.id)
 
+    # Runner is the source of truth for trip state
+    runner_trip = cctv_runner.is_trip_active
+
+    # Fix ghost sessions: DB says active but runner says no
+    if trip and not runner_trip:
+        end_trip_session(trip['id'])
+        trip = None
+
     trip_data = None
-    if trip:
+    if trip and runner_trip:
         start = datetime.datetime.fromisoformat(trip['start_time'])
         duration = datetime.datetime.now() - start
         hours, remainder = divmod(int(duration.total_seconds()), 3600)
@@ -331,7 +367,7 @@ def api_status():
 
     return jsonify({
         "camera_on": cctv_runner.is_camera_on,
-        "trip_active": cctv_runner.is_trip_active,
+        "trip_active": runner_trip,
         "preview_active": cctv_runner.is_preview_active,
         "trip": trip_data,
         "unreviewed_alerts": unreviewed,
@@ -372,8 +408,8 @@ def api_start_trip():
     session_id = start_trip_session(current_user.id)
 
     def on_alert(user_id, trip_session_id, face_paths, body_path, alert_level, familiar_names):
-        """Called when an unknown person is captured."""
-        # Save to database
+        """Called when an unknown person is captured. Runs in background thread."""
+        # Save to database with local basenames first
         face_basenames = [os.path.basename(fp) for fp in face_paths]
         body_basename = os.path.basename(body_path) if body_path else ""
         alert_id = create_alert(user_id, trip_session_id, alert_level,
@@ -386,17 +422,49 @@ def api_start_trip():
                 seen_in_alert=True
             )
 
-        # Send email
-        user = get_user_by_id(user_id)
-        if user:
-            success = send_intruder_alert(user, alert_id, face_paths,
-                                          body_path, alert_level)
-            if success:
-                mark_alert_emailed(alert_id)
+        # Upload to Supabase in background and send email with cloud URLs
+        def _upload_and_email():
+            # Upload all evidence images to Supabase
+            cloud_face_urls = []
+            for fp in face_paths:
+                url = upload_evidence_image(fp)
+                cloud_face_urls.append(url if url else "")
+
+            cloud_body_url = ""
+            if body_path:
+                cloud_body_url = upload_evidence_image(body_path) or ""
+
+            # Send email with cloud URLs (accessible from anywhere)
+            user = get_user_by_id(user_id)
+            if user:
+                success = send_intruder_alert(
+                    user, alert_id, face_paths, body_path, alert_level,
+                    cloud_face_urls=cloud_face_urls,
+                    cloud_body_url=cloud_body_url
+                )
+                if success:
+                    mark_alert_emailed(alert_id)
+
+            # Push real-time alert to dashboard via WebSocket
+            _emit_socketio('new_alert', {
+                'alert_id': alert_id,
+                'alert_level': alert_level,
+                'face_count': len(face_paths),
+                'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'cloud_face_url': cloud_face_urls[0] if cloud_face_urls else "",
+            })
+
+        # Run upload+email in background thread so camera loop isn't blocked
+        threading.Thread(target=_upload_and_email, daemon=True).start()
 
     def on_familiar_seen(user_id, familiar_names):
         for name in familiar_names:
             upsert_known_face_activity(user_id, name, seen_in_camera=True)
+        # Push familiar sighting to dashboard
+        _emit_socketio('familiar_seen', {
+            'names': familiar_names,
+            'timestamp': datetime.datetime.now().strftime("%H:%M:%S"),
+        })
 
     cctv_runner.set_familiar_seen_callback(on_familiar_seen)
 
@@ -406,6 +474,13 @@ def api_start_trip():
     if not success:
         end_trip_session(session_id)
         return jsonify({"success": False, "message": "Failed to start camera. Make sure it is connected and not in use by another app."})
+
+    # Push status update via WebSocket
+    _emit_socketio('status_update', {
+        'trip_active': True,
+        'camera_on': True,
+        'preview_active': False,
+    })
 
     return jsonify({"success": True, "message": "Trip mode activated",
                     "session_id": session_id})
@@ -420,6 +495,14 @@ def api_stop_trip():
         end_trip_session(trip['id'])
     cctv_runner.set_familiar_seen_callback(None)
     cctv_runner.stop_trip_mode()
+
+    # Push status update via WebSocket
+    _emit_socketio('status_update', {
+        'trip_active': False,
+        'camera_on': cctv_runner.is_camera_on,
+        'preview_active': cctv_runner.is_preview_active,
+    })
+
     return jsonify({"success": True, "message": "Trip mode deactivated"})
 
 

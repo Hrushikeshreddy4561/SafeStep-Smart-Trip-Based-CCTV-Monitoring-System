@@ -66,16 +66,16 @@
                 <div class="trip-toggle-row">
                     <label class="toggle-switch">
                         <input type="checkbox" id="trip-toggle"
-                               {% if trip %}checked{% endif %}
+                               {% if runner_trip_active %}checked{% endif %}
                                onchange="toggleTripMode(this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
-                    <div class="trip-status {{ 'active' if trip else 'inactive' }}" id="trip-status-badge">
-                        {{ '🟢 MONITORING' if trip else '⏸ STANDBY' }}
+                    <div class="trip-status {{ 'active' if runner_trip_active else 'inactive' }}" id="trip-status-badge">
+                        {{ '🟢 MONITORING' if runner_trip_active else '⏸ STANDBY' }}
                     </div>
                 </div>
 
-                {% if trip %}
+                {% if trip and runner_trip_active %}
                 <div class="trip-duration" id="trip-duration">--:--:--</div>
                 <div class="trip-meta">Started: {{ trip.start_time[:16] }}</div>
                 {% else %}
@@ -129,18 +129,40 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/app.js') }}?v={{ range(10000,99999) | random }}"></script>
 <script>
-    // Keep dashboard camera always on when trip mode is off.
     document.addEventListener('DOMContentLoaded', () => {
-        const tripActive = {{ 'true' if trip else 'false' }};
-        setKnownFacesButtonDisabled(tripActive);
-        updateCameraStatus('offline');
+        // Use runner state as source of truth (passed from server)
+        const tripActive = {{ 'true' if runner_trip_active else 'false' }};
+        const cameraOn = {{ 'true' if camera_on else 'false' }};
+        const previewActive = {{ 'true' if preview_active else 'false' }};
 
-        if (!tripActive) {
-            startCamera();
+        setKnownFacesButtonDisabled(tripActive);
+
+        // Set initial camera status
+        if (tripActive) {
+            updateCameraStatus('monitoring');
+        } else if (cameraOn || previewActive) {
+            updateCameraStatus('standby');
+        } else {
+            updateCameraStatus('offline');
         }
 
+        // Auto-show feed if camera is already running (e.g. auto-started preview)
+        if (cameraOn || previewActive) {
+            const feed = document.getElementById('camera-feed');
+            const offline = document.getElementById('camera-offline');
+            if (feed) {
+                feed.src = '/video_feed?' + Date.now();
+                feed.style.display = 'block';
+            }
+            if (offline) offline.style.display = 'none';
+        }
+
+        // Initialize WebSocket listeners for dashboard
+        initDashboardSocket();
+
+        // Safety-net polling (15s — WebSocket handles real-time)
         pollStatus();
-        setInterval(pollStatus, 5000);
+        setInterval(pollStatus, 15000);
     });
 </script>
 {% endblock %}
