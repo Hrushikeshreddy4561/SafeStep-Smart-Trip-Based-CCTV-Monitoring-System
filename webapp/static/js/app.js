@@ -107,14 +107,15 @@ async function toggleTripMode(enabled) {
                     statusBadge.textContent = '⏸ STANDBY';
                 }
                 if (duration) duration.style.display = 'none';
-                updateCameraStatus('standby');
-                // Refresh feed for preview mode
+                updateCameraStatus('offline');
+
                 const feed = document.getElementById('camera-feed');
+                const offline = document.getElementById('camera-offline');
                 if (feed) {
-                    setTimeout(() => {
-                        feed.src = '/video_feed?' + Date.now();
-                    }, 400);
+                    feed.src = '';
+                    feed.style.display = 'none';
                 }
+                if (offline) offline.style.display = 'flex';
             }
         }
     } catch (e) {

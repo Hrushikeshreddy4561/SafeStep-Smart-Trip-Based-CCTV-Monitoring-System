@@ -60,6 +60,8 @@ class CCTVRunner:
         self._trip_session_id = None
         self._user_id = None
         self._on_alert_callback = None
+        self._on_familiar_seen_callback = None
+        self._familiar_emit_cache = {}
 
         # Detection modules — loaded once and reused
         self._detector = None
@@ -206,7 +208,9 @@ class CCTVRunner:
                     face_results = last_face_results
 
                     if face_results:
-                        self._recognizer.draw_face_boxes(frame, face_results)
+                        if config.SHOW_FACE_BOXES:
+                            self._recognizer.draw_face_boxes(frame, face_results)
+                        self._emit_familiar_seen(face_results)
 
                     if not person_contours:
                         last_face_results = []
@@ -284,6 +288,7 @@ class CCTVRunner:
         self._user_id = user_id
         self._trip_session_id = trip_session_id
         self._on_alert_callback = on_alert_callback
+        self._familiar_emit_cache = {}
 
         # Load/reload detection modules
         self._ensure_modules_loaded()
@@ -298,20 +303,26 @@ class CCTVRunner:
         return True
 
     def stop_trip_mode(self):
-        """Stop detection, go back to preview."""
+        """Stop trip mode and turn camera off."""
         set_capture_callback(None)
 
-        # Instant mode switch back to preview — camera stays open,
-        # loop thread keeps running, zero interruption to the video feed.
+        # Turn everything off when trip mode ends.
         with self._mode_lock:
-            self._mode = self.MODE_PREVIEW
+            self._mode = self.MODE_OFF
+
+        self._stop_loop()
+        self.stop_camera()
+
+        with self._frame_lock:
+            self._latest_frame = None
 
         # Clean up per-trip modules (but keep FaceRecognizer alive)
         self._alerter = None
         self._detector = None
         self._pet_filter = None
+        self._familiar_emit_cache = {}
 
-        print("[CCTV] Trip mode stopped -> Preview.")
+        print("[CCTV] Trip mode stopped. Camera OFF.")
 
     # ── Overlays ──────────────────────────────────────────────────────────────
 
@@ -373,14 +384,39 @@ class CCTVRunner:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 220), 1,
                         cv2.LINE_AA)
 
-    def _handle_capture(self, face_paths, body_path, alert_level):
+    def _handle_capture(self, face_paths, body_path, alert_level, familiar_names=None):
         """Called when alert_system captures evidence. Triggers email alert."""
         print(f"[CCTV] Capture hook fired: {len(face_paths)} face(s), level={alert_level}")
         if self._on_alert_callback:
             self._on_alert_callback(
                 self._user_id, self._trip_session_id,
-                face_paths, body_path, alert_level
+                face_paths, body_path, alert_level, familiar_names or []
             )
+
+    def set_familiar_seen_callback(self, callback):
+        """Set callback(user_id, names) for known-face camera sightings."""
+        self._on_familiar_seen_callback = callback
+
+    def _emit_familiar_seen(self, face_results):
+        """Emit familiar names with simple per-name throttling to avoid DB spam."""
+        if not self._on_familiar_seen_callback or self._user_id is None:
+            return
+
+        now = time.time()
+        names_to_emit = []
+        for face in face_results:
+            if not face.get('familiar'):
+                continue
+            name = (face.get('name') or '').strip()
+            if not name:
+                continue
+            last_ts = self._familiar_emit_cache.get(name, 0)
+            if now - last_ts >= 10:
+                names_to_emit.append(name)
+                self._familiar_emit_cache[name] = now
+
+        if names_to_emit:
+            self._on_familiar_seen_callback(self._user_id, names_to_emit)
 
     # ── Status ────────────────────────────────────────────────────────────────
 
@@ -396,6 +432,11 @@ class CCTVRunner:
     @property
     def is_preview_active(self):
         return self._mode == self.MODE_PREVIEW
+
+    def reload_known_faces(self):
+        """Reload known face embeddings if recognizer is already initialized."""
+        if self._recognizer is not None:
+            self._recognizer.reload_faces()
 
     def shutdown(self):
         """Clean shutdown."""

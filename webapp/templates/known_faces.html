@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}SafeStep — Known Faces{% endblock %}
+
+{% block content %}
+<div class="page-container known-faces-container">
+    <div class="alerts-header animate-fade-in" style="align-items: flex-start; gap: 0.75rem;">
+        <div>
+            <h1>👥 Known Faces</h1>
+            <p style="color: var(--text-muted); font-size: 0.82rem; margin-top: 0.2rem;">
+                Add trusted people for recognition and manage your current known face library.
+            </p>
+        </div>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline">← Back to Dashboard</a>
+    </div>
+
+    <div class="known-faces-grid">
+        <div class="card animate-fade-in-up">
+            <div class="card-header">
+                <h3 class="card-title">➕ Add Face</h3>
+            </div>
+            <form method="POST" action="{{ url_for('main.add_known_face') }}" enctype="multipart/form-data" class="known-face-form">
+                <div class="form-group">
+                    <label for="person_name">Person Name</label>
+                    <input id="person_name" name="person_name" type="text" placeholder="e.g. Ramesh Kumar" required>
+                </div>
+
+                <div class="camera-capture-card">
+                    <label>Capture Directly (Webcam)</label>
+                    <div class="camera-capture-preview-wrap">
+                        <video id="capture-video" class="camera-capture-preview" autoplay playsinline muted></video>
+                        <img id="capture-photo-preview" class="camera-capture-preview" alt="Captured preview" style="display:none;">
+                    </div>
+                    <div class="camera-capture-actions">
+                        <button type="button" id="btn-start-capture-camera" class="btn btn-outline">Start Camera</button>
+                        <button type="button" id="btn-capture-photo" class="btn btn-outline" disabled>Capture Photo</button>
+                    </div>
+                    <p id="capture-status" class="capture-status-text">Use upload below or capture from webcam.</p>
+                    <canvas id="capture-canvas" style="display:none;"></canvas>
+                </div>
+
+                <div class="form-group">
+                    <label for="face_image">Face Image</label>
+                    <input id="face_image" name="face_image" type="file" accept=".jpg,.jpeg,.png,.bmp,image/*" required>
+                </div>
+
+                <button type="submit" class="btn btn-success" style="width: 100%;">
+                    Save Known Face
+                </button>
+            </form>
+
+            <div class="known-faces-note">
+                Future enhancement placeholder: this page can include a last-visited log for each known person.
+            </div>
+        </div>
+
+        <div class="card animate-fade-in-up" style="animation-delay: 0.08s;">
+            <div class="card-header">
+                <h3 class="card-title">📋 Known Face List</h3>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">{{ known_faces|length }} total</span>
+            </div>
+
+            {% if known_faces %}
+            <div class="known-face-list">
+                {% for face in known_faces %}
+                <div class="known-face-item">
+                    <img class="known-face-thumb"
+                         src="{{ url_for('main.known_faces_image', filename=face.filename) }}"
+                         alt="{{ face.name }}">
+                    <div class="known-face-meta">
+                        <h4>{{ face.name }}</h4>
+                        <p>{{ face.filename }}</p>
+                        <p>
+                            📹 Last camera seen:
+                            {{ face.last_seen_camera[:19].replace('T', ' ') if face.last_seen_camera else 'Never' }}
+                        </p>
+                        <p>
+                            🖼 Last alert seen:
+                            {{ face.last_seen_alert[:19].replace('T', ' ') if face.last_seen_alert else 'Never' }}
+                        </p>
+                    </div>
+                    <form method="POST" action="{{ url_for('main.delete_known_face', filename=face.filename) }}"
+                          onsubmit="return confirm('Delete this known face?');">
+                        <button type="submit" class="btn btn-danger">Delete</button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state" style="padding: 2rem 1rem;">
+                <div class="empty-icon">🧑</div>
+                <h3>No known faces yet</h3>
+                <p>Add your first trusted person using the form.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (function () {
+        const startBtn = document.getElementById('btn-start-capture-camera');
+        const captureBtn = document.getElementById('btn-capture-photo');
+        const video = document.getElementById('capture-video');
+        const canvas = document.getElementById('capture-canvas');
+        const photoPreview = document.getElementById('capture-photo-preview');
+        const faceInput = document.getElementById('face_image');
+        const statusEl = document.getElementById('capture-status');
+
+        let stream = null;
+
+        function setStatus(text) {
+            statusEl.textContent = text;
+        }
+
+        async function startCamera() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                setStatus('Camera access is not supported in this browser.');
+                return;
+            }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                video.srcObject = stream;
+                photoPreview.style.display = 'none';
+                video.style.display = 'block';
+                captureBtn.disabled = false;
+                setStatus('Camera ready. Center face and click Capture Photo.');
+            } catch (err) {
+                setStatus('Unable to access camera. Please allow camera permission.');
+            }
+        }
+
+        function capturePhoto() {
+            if (!video.videoWidth || !video.videoHeight) {
+                setStatus('Camera is not ready yet.');
+                return;
+            }
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob(function(blob) {
+                if (!blob) {
+                    setStatus('Capture failed. Please try again.');
+                    return;
+                }
+
+                const fileName = 'captured_face_' + Date.now() + '.jpg';
+                const file = new File([blob], fileName, { type: 'image/jpeg' });
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                faceInput.files = dt.files;
+
+                photoPreview.src = canvas.toDataURL('image/jpeg');
+                photoPreview.style.display = 'block';
+                video.style.display = 'none';
+                setStatus('Photo captured and attached to Face Image input.');
+
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                captureBtn.disabled = true;
+            }, 'image/jpeg', 0.92);
+        }
+
+        startBtn.addEventListener('click', startCamera);
+        captureBtn.addEventListener('click', capturePhoto);
+
+        window.addEventListener('beforeunload', function() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    })();
+</script>
+{% endblock %}

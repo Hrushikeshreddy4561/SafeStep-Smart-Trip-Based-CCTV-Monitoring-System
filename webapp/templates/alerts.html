@@ -5,9 +5,19 @@
 <div class="page-container" style="max-width: 900px;">
     <div class="alerts-header animate-fade-in">
         <h1>🔔 Security Alerts</h1>
-        <span style="color: var(--text-muted); font-size: 0.9rem;">
-            {{ alerts | length }} alert(s)
-        </span>
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+            <span style="color: var(--text-muted); font-size: 0.9rem;">
+                {{ alerts | length }} alert(s)
+            </span>
+            {% if alerts %}
+            <form method="POST" action="{{ url_for('main.delete_all_alerts') }}"
+                  onsubmit="return confirm('Delete all alerts permanently?');">
+                <button type="submit" class="btn btn-danger" style="padding:0.45rem 0.75rem; font-size:0.78rem;">
+                    Delete All
+                </button>
+            </form>
+            {% endif %}
+        </div>
     </div>
 
     <div class="alert-list">

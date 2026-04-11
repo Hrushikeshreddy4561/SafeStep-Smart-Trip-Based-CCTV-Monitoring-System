@@ -124,7 +124,8 @@ CRITICAL_THRESHOLD = 5     # Frames of unknown presence before CRITICAL
 ALERT_COOLDOWN_SEC = 3
 
 # ─── DISPLAY ──────────────────────────────────────────────────────────────────
-SHOW_MOTION_BOXES = True
+SHOW_MOTION_BOXES = False
+SHOW_FACE_BOXES   = False
 SHOW_FPS          = True
 SHOW_ALERT_STATUS = True
 

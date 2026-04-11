@@ -66,3 +66,4 @@ webapp/database.db-shm
 !known_faces/.gitkeep
 !alerts/.gitkeep
 !evidence/.gitkeep
+.env

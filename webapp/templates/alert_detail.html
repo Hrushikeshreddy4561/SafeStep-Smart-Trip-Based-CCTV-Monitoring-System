@@ -90,6 +90,14 @@
             </button>
             {% endif %}
         </div>
+
+        <form method="POST" action="{{ url_for('main.delete_alert', alert_id=alert.id) }}"
+              onsubmit="return confirm('Delete this alert permanently?');"
+              style="margin-top: 0.75rem;">
+            <button type="submit" class="btn btn-danger" style="width:100%;">
+                🗑 Delete This Alert
+            </button>
+        </form>
     </div>
 
     <!-- Alert Info -->
