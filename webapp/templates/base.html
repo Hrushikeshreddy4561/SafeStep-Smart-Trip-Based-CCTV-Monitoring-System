@@ -26,6 +26,9 @@
                 <a href="{{ url_for('main.known_faces_page') }}" id="nav-known-faces-link" class="{{ 'active' if request.endpoint == 'main.known_faces_page' }}">
                     👥 Known Faces
                 </a>
+                <a href="{{ url_for('main.cameras_page') }}" class="{{ 'active' if request.endpoint == 'main.cameras_page' }}">
+                    🎥 Cameras
+                </a>
                 <a href="{{ url_for('main.logs_page') }}" class="{{ 'active' if request.endpoint == 'main.logs_page' }}">
                     🧾 Logs
                 </a>

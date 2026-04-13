@@ -28,7 +28,18 @@ import config
 from motion_detection import MotionDetector
 from pet_filter import PetFilter
 from face_recognition_module import FaceRecognizer
-from alert_system import AlertSystem, set_capture_callback
+from alert_system import AlertSystem
+
+
+def _camera_sources_from_config():
+    sources = getattr(config, 'CAMERA_SOURCES', None)
+    if isinstance(sources, (list, tuple)) and len(sources) > 0:
+        return list(sources)
+    return [config.CAMERA_INDEX]
+
+
+def _camera_label(index):
+    return f"cam{index + 1}"
 
 
 class CCTVRunner:
@@ -47,7 +58,13 @@ class CCTVRunner:
     MODE_PREVIEW = 1
     MODE_TRIP    = 2
 
-    def __init__(self):
+    def __init__(self, camera_source=None, camera_id=0, camera_label=None):
+        self.camera_id = camera_id
+        self.camera_source = config.CAMERA_INDEX if camera_source is None else camera_source
+        self.camera_label = camera_label or _camera_label(camera_id)
+        self._logical_camera_id = self.camera_id
+        self._logical_camera_label = self.camera_label
+
         self._camera = None
         self._camera_lock = threading.Lock()
         self._loop_thread = None
@@ -87,9 +104,9 @@ class CCTVRunner:
         with self._camera_lock:
             if self._camera is not None and self._camera.isOpened():
                 return True
-            self._camera = cv2.VideoCapture(config.CAMERA_INDEX)
+            self._camera = cv2.VideoCapture(self.camera_source)
             if not self._camera.isOpened():
-                print("[CCTV] ERROR: Cannot open camera")
+                print(f"[CCTV:{self.camera_label}] ERROR: Cannot open camera source {self.camera_source}")
                 self._camera = None
                 return False
             self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, config.FRAME_WIDTH)
@@ -97,7 +114,7 @@ class CCTVRunner:
             self._camera.set(cv2.CAP_PROP_FPS, config.FPS_TARGET)
             # Minimise internal buffer for lowest latency
             self._camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            print("[CCTV] Camera opened.")
+            print(f"[CCTV:{self.camera_label}] Camera opened.")
         self._drain_buffer()
         return True
 
@@ -107,7 +124,7 @@ class CCTVRunner:
             if self._camera is not None:
                 self._camera.release()
                 self._camera = None
-                print("[CCTV] Camera released.")
+                print(f"[CCTV:{self.camera_label}] Camera released.")
 
     def _read_frame(self):
         """Read a single frame from the camera. Returns (ret, frame)."""
@@ -175,22 +192,27 @@ class CCTVRunner:
 
             elif current_mode == self.MODE_TRIP:
                 # ── Trip: full detection pipeline ─────────────────────────
-                if not self._detector:
+                detector = self._detector
+                pet_filter = self._pet_filter
+                recognizer = self._recognizer
+                alerter = self._alerter
+
+                if not detector or not pet_filter or not recognizer or not alerter:
                     # Shouldn't happen, but guard against it
                     self._add_preview_overlay(frame)
                 else:
-                    contours, _ = self._detector.detect(frame)
+                    contours, _ = detector.detect(frame)
                     motion_detected = len(contours) > 0
-                    person_contours, pet_contours = self._pet_filter.filter(contours)
+                    person_contours, pet_contours = pet_filter.filter(contours)
 
                     # Draw motion boxes
                     if config.SHOW_MOTION_BOXES:
                         for c in person_contours:
-                            x, y, bw, bh = self._pet_filter.get_bounding_box(c)
+                            x, y, bw, bh = pet_filter.get_bounding_box(c)
                             cv2.rectangle(frame, (x, y), (x+bw, y+bh),
                                           config.COLOR_HIGH, 2)
                         for c in pet_contours:
-                            x, y, bw, bh = self._pet_filter.get_bounding_box(c)
+                            x, y, bw, bh = pet_filter.get_bounding_box(c)
                             cv2.rectangle(frame, (x, y), (x+bw, y+bh),
                                           config.COLOR_LOW, 1)
 
@@ -203,20 +225,20 @@ class CCTVRunner:
                                 frame_counter % config.FACE_DETECT_EVERY_N_FRAMES == 0)
 
                     if run_face:
-                        last_face_results = self._recognizer.identify_faces(frame)
+                        last_face_results = recognizer.identify_faces(frame)
 
                     face_results = last_face_results
 
                     if face_results:
                         if config.SHOW_FACE_BOXES:
-                            self._recognizer.draw_face_boxes(frame, face_results)
+                            recognizer.draw_face_boxes(frame, face_results)
                         self._emit_familiar_seen(face_results)
 
                     if not person_contours:
                         last_face_results = []
 
                     # Alert evaluation
-                    alert_level, message = self._alerter.evaluate(
+                    alert_level, message = alerter.evaluate(
                         clean_frame, frame, motion_detected,
                         person_contours, face_results
                     )
@@ -245,14 +267,14 @@ class CCTVRunner:
         with self._mode_lock:
             self._mode = self.MODE_PREVIEW
         self._start_loop()
-        print("[CCTV] Preview started.")
+        print(f"[CCTV:{self.camera_label}] Preview started.")
 
     def stop_preview(self):
         """Stop the preview (does NOT release camera)."""
         with self._mode_lock:
             if self._mode == self.MODE_PREVIEW:
                 self._mode = self.MODE_OFF
-        print("[CCTV] Preview stopped.")
+        print(f"[CCTV:{self.camera_label}] Preview stopped.")
 
     # ── Trip Mode ─────────────────────────────────────────────────────────────
 
@@ -262,20 +284,20 @@ class CCTVRunner:
             # Re-create only the per-trip state modules (fast)
             self._detector = MotionDetector()
             self._pet_filter = PetFilter()
-            self._alerter = AlertSystem()
+            self._alerter = AlertSystem(on_capture_callback=self._handle_capture)
             return
 
-        print("[CCTV] Loading detection modules...")
+        print(f"[CCTV:{self.camera_label}] Loading detection modules...")
         self._detector = MotionDetector()
         self._pet_filter = PetFilter()
-        self._alerter = AlertSystem()
+        self._alerter = AlertSystem(on_capture_callback=self._handle_capture)
 
         if self._recognizer is None:
             # This is the slow call (~2-4s) — only happens once per app run
             self._recognizer = FaceRecognizer()
 
         self._modules_loaded = True
-        print("[CCTV] Modules ready.")
+        print(f"[CCTV:{self.camera_label}] Modules ready.")
 
     def start_trip_mode(self, user_id, trip_session_id, on_alert_callback=None):
         """Start full detection pipeline. Returns True on success, False on failure."""
@@ -292,19 +314,21 @@ class CCTVRunner:
 
         # Load/reload detection modules
         self._ensure_modules_loaded()
-        set_capture_callback(self._handle_capture)
+        if self._alerter:
+            self._alerter.set_capture_callback(self._handle_capture)
 
         # Instant mode switch — no thread restart needed!
         with self._mode_lock:
             self._mode = self.MODE_TRIP
         self._start_loop()
 
-        print("[CCTV] Trip mode ACTIVE.")
+        print(f"[CCTV:{self.camera_label}] Trip mode ACTIVE.")
         return True
 
     def stop_trip_mode(self):
         """Stop trip mode and return to preview mode."""
-        set_capture_callback(None)
+        if self._alerter:
+            self._alerter.set_capture_callback(None)
 
         # Return to preview mode so camera stays available in dashboard.
         with self._mode_lock:
@@ -315,13 +339,11 @@ class CCTVRunner:
             self.start_camera()
         self._start_loop()
 
-        # Clean up per-trip modules (but keep FaceRecognizer alive)
-        self._alerter = None
-        self._detector = None
-        self._pet_filter = None
+        # Keep modules allocated to avoid race with the loop thread.
+        # Fresh per-trip state is rebuilt in _ensure_modules_loaded() on next start.
         self._familiar_emit_cache = {}
 
-        print("[CCTV] Trip mode stopped -> Preview.")
+        print(f"[CCTV:{self.camera_label}] Trip mode stopped -> Preview.")
 
     # ── Overlays ──────────────────────────────────────────────────────────────
 
@@ -335,7 +357,7 @@ class CCTVRunner:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, h - 32), (w, h), (0, 0, 0), cv2.FILLED)
         cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
-        cv2.putText(frame, f"{config.CAMERA_LABEL}   {ts}", (8, h - 8),
+        cv2.putText(frame, f"{self.camera_label}   {ts}", (8, h - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1,
                     cv2.LINE_AA)
 
@@ -372,7 +394,7 @@ class CCTVRunner:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, h - 32), (w, h), (0, 0, 0), cv2.FILLED)
         cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
-        cv2.putText(frame, f"{config.CAMERA_LABEL}   {ts}", (8, h - 8),
+        cv2.putText(frame, f"{self.camera_label}   {ts}", (8, h - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1,
                     cv2.LINE_AA)
 
@@ -385,12 +407,19 @@ class CCTVRunner:
 
     def _handle_capture(self, face_paths, body_path, alert_level, familiar_names=None):
         """Called when alert_system captures evidence. Triggers email alert."""
-        print(f"[CCTV] Capture hook fired: {len(face_paths)} face(s), level={alert_level}")
+        print(f"[CCTV:{self.camera_label}] Capture hook fired: {len(face_paths)} face(s), level={alert_level}")
         if self._on_alert_callback:
-            self._on_alert_callback(
-                self._user_id, self._trip_session_id,
-                face_paths, body_path, alert_level, familiar_names or []
-            )
+            try:
+                self._on_alert_callback(
+                    self._user_id, self._trip_session_id,
+                    face_paths, body_path, alert_level, familiar_names or [],
+                    self._logical_camera_id, self._logical_camera_label
+                )
+            except TypeError:
+                self._on_alert_callback(
+                    self._user_id, self._trip_session_id,
+                    face_paths, body_path, alert_level, familiar_names or []
+                )
 
     def set_familiar_seen_callback(self, callback):
         """Set callback(user_id, names) for known-face camera sightings."""
@@ -415,7 +444,17 @@ class CCTVRunner:
                 self._familiar_emit_cache[name] = now
 
         if names_to_emit:
-            self._on_familiar_seen_callback(self._user_id, names_to_emit)
+            try:
+                self._on_familiar_seen_callback(
+                    self._user_id, names_to_emit, self._logical_camera_id, self._logical_camera_label
+                )
+            except TypeError:
+                self._on_familiar_seen_callback(self._user_id, names_to_emit)
+
+    def set_logical_camera_identity(self, camera_id, camera_label):
+        """Set logical camera identity used for callbacks when sources are shared."""
+        self._logical_camera_id = camera_id
+        self._logical_camera_label = camera_label
 
     # ── Status ────────────────────────────────────────────────────────────────
 
@@ -443,8 +482,168 @@ class CCTVRunner:
             self._mode = self.MODE_OFF
         self._stop_loop()
         self.stop_camera()
-        print("[CCTV] Shutdown complete.")
+        print(f"[CCTV:{self.camera_label}] Shutdown complete.")
 
 
-# Singleton
-cctv_runner = CCTVRunner()
+class MultiCameraManager:
+    """Owns one CCTVRunner per configured camera source."""
+
+    def __init__(self):
+        self._runners = {}
+        self._source_to_runner = {}
+        self._camera_to_runner = {}
+
+        for idx, source in enumerate(_camera_sources_from_config()):
+            source_key = str(source)
+            runner = self._source_to_runner.get(source_key)
+            if runner is None:
+                runner = CCTVRunner(
+                    camera_source=source,
+                    camera_id=idx,
+                    camera_label=_camera_label(idx)
+                )
+                self._source_to_runner[source_key] = runner
+            self._camera_to_runner[idx] = runner
+            self._runners[idx] = runner
+
+    def _unique_runners(self):
+        return list({id(r): r for r in self._camera_to_runner.values()}.values())
+
+    @property
+    def primary_camera_id(self):
+        return min(self._runners.keys()) if self._runners else 0
+
+    def get_runner(self, camera_id=None):
+        if camera_id is None:
+            camera_id = self.primary_camera_id
+        return self._camera_to_runner.get(camera_id)
+
+    def list_cameras(self):
+        return [
+            {
+                'id': camera_id,
+                'label': _camera_label(camera_id),
+                'source': str(runner.camera_source),
+            }
+            for camera_id, runner in sorted(self._runners.items())
+        ]
+
+    def get_camera_statuses(self):
+        return [
+            {
+                'id': camera_id,
+                'label': _camera_label(camera_id),
+                'camera_on': runner.is_camera_on,
+                'trip_active': runner.is_trip_active,
+                'preview_active': runner.is_preview_active,
+            }
+            for camera_id, runner in sorted(self._runners.items())
+        ]
+
+    def labels_for_camera(self, camera_id=None):
+        """Return logical camera labels that share the same physical source."""
+        if camera_id is None:
+            camera_id = self.primary_camera_id
+        runner = self._camera_to_runner.get(camera_id)
+        if runner is None:
+            return []
+
+        source_key = str(runner.camera_source)
+        labels = []
+        for logical_id, logical_runner in sorted(self._camera_to_runner.items()):
+            if str(logical_runner.camera_source) == source_key:
+                labels.append(_camera_label(logical_id))
+        return labels
+
+    @property
+    def is_camera_on(self):
+        return any(r.is_camera_on for r in self._unique_runners())
+
+    @property
+    def is_trip_active(self):
+        return any(r.is_trip_active for r in self._unique_runners())
+
+    @property
+    def is_preview_active(self):
+        return any(r.is_preview_active for r in self._unique_runners())
+
+    def reload_known_faces(self):
+        for runner in self._unique_runners():
+            runner.reload_known_faces()
+
+    def get_frame(self, camera_id=None):
+        runner = self.get_runner(camera_id)
+        return runner.get_frame() if runner else None
+
+    def start_preview_all(self):
+        for runner in self._unique_runners():
+            runner.start_preview()
+
+    def stop_all(self):
+        for runner in self._unique_runners():
+            runner.stop_preview()
+            runner._stop_loop()
+            runner.stop_camera()
+
+    def set_familiar_seen_callback_all(self, callback):
+        for runner in self._unique_runners():
+            runner.set_familiar_seen_callback(callback)
+
+    def start_trip_all(self, user_id, trip_session_id, on_alert_callback=None):
+        return self.start_trip_selected(
+            user_id,
+            trip_session_id,
+            selected_camera_ids=sorted(self._camera_to_runner.keys()),
+            on_alert_callback=on_alert_callback,
+        )
+
+    def start_trip_selected(self, user_id, trip_session_id,
+                            selected_camera_ids=None, on_alert_callback=None):
+        started = []
+        failed_ids = []
+        runner_to_camera_ids = {}
+        for camera_id, runner in self._camera_to_runner.items():
+            runner_to_camera_ids.setdefault(id(runner), []).append(camera_id)
+
+        selected_set = set(selected_camera_ids or [])
+        if not selected_set:
+            return False
+
+        for runner in self._unique_runners():
+            logical_ids = runner_to_camera_ids.get(id(runner), [])
+            selected_for_runner = [cid for cid in logical_ids if cid in selected_set]
+            if not selected_for_runner:
+                # Keep non-selected cameras in preview mode.
+                runner.stop_trip_mode()
+                continue
+
+            chosen_id = selected_for_runner[0]
+            runner.set_logical_camera_identity(chosen_id, _camera_label(chosen_id))
+
+            ok = runner.start_trip_mode(
+                user_id,
+                trip_session_id,
+                on_alert_callback=on_alert_callback
+            )
+            if not ok:
+                failed_ids.extend(selected_for_runner)
+                continue
+            started.append(runner)
+
+        if failed_ids:
+            print(f"[CCTV] Trip mode unavailable for camera IDs: {failed_ids}")
+
+        return len(started) > 0
+
+    def stop_trip_all(self):
+        for runner in self._unique_runners():
+            runner.stop_trip_mode()
+
+    def shutdown(self):
+        for runner in self._unique_runners():
+            runner.shutdown()
+
+
+# Singleton manager + backward-compatible primary runner alias
+cctv_manager = MultiCameraManager()
+cctv_runner = cctv_manager.get_runner()

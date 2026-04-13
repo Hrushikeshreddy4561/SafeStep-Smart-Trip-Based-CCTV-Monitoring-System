@@ -138,8 +138,7 @@ def _save_pair(clean_frame, annotated_frame, alert_level, face_boxes):
 
             suffix    = f"_face{idx}" if len(face_boxes) > 1 else ""
             face_path = fp("FACE", suffix)
-            cv2.imwrite(face_path,
-                        _burn_bar(crop, f"FACE | {alert_level} | unknown"))
+            cv2.imwrite(face_path, crop)
             face_paths.append(face_path)
 
     # ── BODY: full annotated frame + timestamp bar ────────────────────────────
@@ -173,9 +172,10 @@ class AlertSystem:
       _session_active     : True while person is in zone
     """
 
-    def __init__(self):
+    def __init__(self, on_capture_callback=None):
         self._current_level     = config.ALERT_LOW
         self._log_file          = config.ALERTS_LOG
+        self._on_capture_callback = on_capture_callback
 
         # Time-based zone tracking
         self._last_seen_in_zone = 0.0
@@ -194,6 +194,10 @@ class AlertSystem:
         self._last_familiar_seen = 0.0
 
         self._ensure_log()
+
+    def set_capture_callback(self, callback):
+        """Register per-instance capture callback for evidence events."""
+        self._on_capture_callback = callback
 
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -345,12 +349,13 @@ class AlertSystem:
                     print(f"{'!'*50}\n")
 
                     # Notify web app (if callback registered)
-                    if _on_capture_callback:
+                    callback = self._on_capture_callback or _on_capture_callback
+                    if callback:
                         try:
                             familiar_names = sorted({
                                 f['name'] for f in face_results if f.get('familiar') and f.get('name')
                             })
-                            _on_capture_callback(face_paths, body_path, level, familiar_names)
+                            callback(face_paths, body_path, level, familiar_names)
                         except Exception as e:
                             print(f"[ALERT] Capture callback error: {e}")
 

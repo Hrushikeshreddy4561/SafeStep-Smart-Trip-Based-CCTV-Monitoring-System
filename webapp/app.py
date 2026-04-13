@@ -25,8 +25,8 @@ if PROJECT_ROOT not in sys.path:
 # 2) webapp/.env (optional fallback)
 WEBAPP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(WEBAPP_DIR)
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
-load_dotenv(os.path.join(WEBAPP_DIR, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=True)
+load_dotenv(os.path.join(WEBAPP_DIR, ".env"), override=False)
 
 # ── SocketIO instance (from shared extensions module) ────────────────────────
 from webapp.extensions import socketio
@@ -57,6 +57,7 @@ def create_app():
 
     # ── Start daily summary scheduler ─────────────────────────────────────
     from webapp.daily_summary import send_daily_summary_job
+    from webapp.routes import process_trip_schedules
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(
@@ -67,24 +68,31 @@ def create_app():
         id='daily_summary',
         replace_existing=True
     )
+    scheduler.add_job(
+        func=lambda: process_trip_schedules(app),
+        trigger='interval',
+        seconds=20,
+        id='trip_schedule_worker',
+        replace_existing=True
+    )
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown())
 
     # ── Auto-start camera preview on boot ─────────────────────────────────
-    from webapp.cctv_runner import cctv_runner
+    from webapp.cctv_runner import cctv_manager
     import threading
 
     def _boot_camera():
         """Start camera preview in background so it doesn't block app startup."""
         import time
         time.sleep(1.5)  # Let Flask finish binding to port first
-        cctv_runner.start_preview()
+        cctv_manager.start_preview_all()
         print("[BOOT] Camera preview auto-started.")
 
     threading.Thread(target=_boot_camera, daemon=True).start()
 
     # ── Cleanup on exit ───────────────────────────────────────────────────
-    atexit.register(cctv_runner.shutdown)
+    atexit.register(cctv_manager.shutdown)
 
     print("\n" + "=" * 55)
     print("  SafeStep -- Smart Trip-Based CCTV Monitor")

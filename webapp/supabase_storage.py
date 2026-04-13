@@ -21,11 +21,12 @@ from dotenv import load_dotenv
 # Load env
 WEBAPP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(WEBAPP_DIR)
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
-load_dotenv(os.path.join(WEBAPP_DIR, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=True)
+load_dotenv(os.path.join(WEBAPP_DIR, ".env"), override=False)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "evidence-images")
 
 # Thread pool for non-blocking uploads (max 3 concurrent uploads)
@@ -48,7 +49,8 @@ def upload_evidence_image(local_path: str) -> str:
     str
         Public URL of the uploaded image, or empty string on failure.
     """
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    token = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY
+    if not SUPABASE_URL or not token:
         return ""
 
     if not os.path.exists(local_path):
@@ -64,8 +66,8 @@ def upload_evidence_image(local_path: str) -> str:
         # Upload via REST API (upsert mode)
         upload_url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}"
         headers = {
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+            "apikey": token,
+            "Authorization": f"Bearer {token}",
             "Content-Type": "image/jpeg",
             "x-upsert": "true"
         }
@@ -78,7 +80,10 @@ def upload_evidence_image(local_path: str) -> str:
             print(f"[SUPABASE] Uploaded: {filename}")
             return public_url
         else:
-            print(f"[SUPABASE] Upload failed ({resp.status_code}): {resp.text[:200]}")
+            print(
+                f"[SUPABASE] Upload failed ({resp.status_code}) for {filename}: "
+                f"{resp.text[:200]}"
+            )
             return ""
 
     except Exception as e:

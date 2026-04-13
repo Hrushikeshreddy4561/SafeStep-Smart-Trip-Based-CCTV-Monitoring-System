@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}SafeStep — Cameras{% endblock %}
+
+{% block content %}
+<div class="page-container" style="max-width: 1100px;">
+    <div class="card animate-fade-in-up">
+        <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+            <h3 class="card-title">🎥 Cameras Configuration</h3>
+            <span style="font-size:0.78rem; color: var(--text-secondary);">Trip mode + priority policies</span>
+        </div>
+
+        <form method="POST" action="{{ url_for('main.cameras_save') }}">
+            <div class="camera-config-grid" style="margin-top: 0.75rem;">
+                {% for cam in cameras %}
+                <div class="camera-config-card">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-bottom:0.55rem;">
+                        <div>
+                            <div style="font-size:1rem; font-weight:700;">{{ cam.label | upper }}</div>
+                            <div style="font-size:0.72rem; color:var(--text-muted);">Source: {{ cam.source }}</div>
+                        </div>
+                        <label class="config-trip-chip">
+                            <input type="checkbox" name="trip_enabled_{{ cam.id }}" {% if cam.trip_enabled %}checked{% endif %}>
+                            <span>Active in Trip Mode</span>
+                        </label>
+                    </div>
+
+                    <div class="config-row">
+                        <div>
+                            <label class="schedule-label" for="location_{{ cam.id }}">Location</label>
+                            <select id="location_{{ cam.id }}" name="location_{{ cam.id }}" class="config-select" onchange="syncPriorityFromLocation({{ cam.id }})">
+                                <option value="indoor" {% if cam.location_type == 'indoor' %}selected{% endif %}>Indoor (inside house)</option>
+                                <option value="outdoor" {% if cam.location_type == 'outdoor' %}selected{% endif %}>Outdoor (road/outside boundary)</option>
+                                <option value="parking" {% if cam.location_type == 'parking' %}selected{% endif %}>Parking Area</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="schedule-label" for="priority_{{ cam.id }}">Priority</label>
+                            <select id="priority_{{ cam.id }}" name="priority_{{ cam.id }}" class="config-select">
+                                <option value="high" {% if cam.priority_level == 'high' %}selected{% endif %}>High</option>
+                                <option value="medium" {% if cam.priority_level == 'medium' %}selected{% endif %}>Medium</option>
+                                <option value="low" {% if cam.priority_level == 'low' %}selected{% endif %}>Low</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="config-note">
+                        High: always alert. Medium: alert for high/critical events. Low: critical-only.
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; margin-top: 1rem;">
+                <button class="btn btn-primary" type="submit" style="width:auto; min-width:220px;">Save Camera Configuration</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function syncPriorityFromLocation(cameraId) {
+    const loc = document.getElementById('location_' + cameraId);
+    const pri = document.getElementById('priority_' + cameraId);
+    if (!loc || !pri) return;
+
+    if (loc.value === 'indoor') {
+        pri.value = 'high';
+    } else if (loc.value === 'outdoor') {
+        pri.value = 'low';
+    } else if (loc.value === 'parking') {
+        if (pri.value === 'high') {
+            pri.value = 'medium';
+        }
+    }
+}
+</script>
+{% endblock %}

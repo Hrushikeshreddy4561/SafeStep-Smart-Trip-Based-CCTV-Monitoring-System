@@ -17,20 +17,24 @@
         <div>
             <!-- Camera Feed -->
             <div class="card animate-fade-in-up" style="padding: 0; overflow: hidden; margin-bottom: 1.25rem;">
-                <div class="camera-container" id="camera-container">
-                    <img src="" class="camera-feed" id="camera-feed"
-                         alt="Live Camera Feed" style="display: none;"
-                         onerror="this.style.display='none'; document.getElementById('camera-offline').style.display='flex';">
-                    <div class="camera-offline" id="camera-offline" style="display: flex;">
-                        <span class="icon">📷</span>
-                        <span>Camera is offline</span>
-                        <button class="btn btn-outline" style="margin-top: 0.5rem; font-size: 0.82rem;" onclick="startCamera()">
-                            ▶ Start Camera
-                        </button>
+                <div style="display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); padding: 0.75rem;">
+                    {% for camera in cameras %}
+                    <div class="camera-container" id="camera-container-{{ camera.id }}">
+                        <div class="camera-name-badge">{{ camera.label }}</div>
+                        <img src="" class="camera-feed" id="camera-feed-{{ camera.id }}"
+                             alt="{{ camera.label }} Live Feed" style="display: none;">
+                        <div class="camera-offline" id="camera-offline-{{ camera.id }}" style="display: flex;">
+                            <span class="icon">📷</span>
+                            <span>{{ camera.label }} is offline</span>
+                            <button class="btn btn-outline" style="margin-top: 0.5rem; font-size: 0.82rem;" onclick="startCamera()">
+                                ▶ Start Camera
+                            </button>
+                        </div>
+                        <div class="camera-status-badge" id="camera-status-{{ camera.id }}">
+                            <span id="status-text-{{ camera.id }}">CONNECTING</span>
+                        </div>
                     </div>
-                    <div class="camera-status-badge" id="camera-status">
-                        <span id="status-text">CONNECTING</span>
-                    </div>
+                    {% endfor %}
                 </div>
             </div>
 
@@ -52,6 +56,49 @@
                         <div class="stat-value" id="stat-unreviewed">{{ unreviewed }}</div>
                         <div class="stat-label">Unreviewed</div>
                     </div>
+                </div>
+            </div>
+
+            <div class="card animate-fade-in-up" style="animation-delay: 0.15s; margin-top: 1rem;">
+                <div class="card-header">
+                    <h3 class="card-title">⏱ Trip Schedule</h3>
+                </div>
+                <div class="trip-schedule-grid">
+                    <div>
+                        <label class="schedule-label" for="schedule-start-time">Start Time</label>
+                        <input id="schedule-start-time" class="schedule-time-input" type="time"
+                               value="{{ trip_schedule.start_time if trip_schedule and trip_schedule.enabled else '' }}">
+                    </div>
+                    <div>
+                        <label class="schedule-label" for="schedule-end-time">End Time</label>
+                        <input id="schedule-end-time" class="schedule-time-input" type="time"
+                               value="{{ trip_schedule.end_time if trip_schedule and trip_schedule.enabled else '' }}">
+                    </div>
+                </div>
+
+                <div class="schedule-label" style="margin-top:0.75rem;">Days</div>
+                <div class="schedule-days" id="schedule-days">
+                    {% set sel_days = trip_schedule.days if trip_schedule and trip_schedule.enabled else [] %}
+                    {% for day in ['mon','tue','wed','thu','fri','sat','sun'] %}
+                    <label class="schedule-day-chip">
+                        <input type="checkbox" value="{{ day }}" {% if day in sel_days %}checked{% endif %}>
+                        <span>{{ day }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <div class="schedule-actions">
+                    <button class="btn btn-primary" type="button" onclick="saveTripSchedule()">Save Schedule</button>
+                    <button class="btn btn-outline" type="button" onclick="disableTripSchedule()">Disable Schedule</button>
+                    <button class="btn btn-danger" type="button" onclick="endTripNowFromSchedule()">End Trip Mode</button>
+                </div>
+
+                <div class="schedule-status" id="schedule-status-text">
+                    {% if trip_schedule and trip_schedule.enabled %}
+                    Schedule enabled: {{ trip_schedule.start_time }} - {{ trip_schedule.end_time }}
+                    {% else %}
+                    Schedule disabled.
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -116,6 +163,9 @@
                     <a href="{{ url_for('main.logs_page') }}" class="btn btn-outline">
                         🧾 Session Logs
                     </a>
+                    <a href="{{ url_for('main.cameras_page') }}" class="btn btn-outline">
+                        🎥 Cameras
+                    </a>
                     <a href="tel:{{ current_user.police_phone or '100' }}" class="emergency-btn">
                         🚨 Emergency: {{ current_user.police_phone or '100' }}
                     </a>
@@ -130,6 +180,10 @@
 <script src="{{ url_for('static', filename='js/app.js') }}?v={{ range(10000,99999) | random }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
+        window.CAMERA_IDS = {{ camera_ids | tojson }};
+        window.PRIMARY_CAMERA_ID = {{ primary_camera_id }};
+        window.TRIP_SCHEDULE = {{ trip_schedule | tojson }};
+
         // Use runner state as source of truth (passed from server)
         const tripActive = {{ 'true' if runner_trip_active else 'false' }};
         const cameraOn = {{ 'true' if camera_on else 'false' }};
@@ -139,23 +193,21 @@
 
         // Set initial camera status
         if (tripActive) {
-            updateCameraStatus('monitoring');
+            getCameraIds().forEach((cameraId) => updateCameraStatus('monitoring', cameraId));
         } else if (cameraOn || previewActive) {
-            updateCameraStatus('standby');
+            getCameraIds().forEach((cameraId) => updateCameraStatus('standby', cameraId));
         } else {
-            updateCameraStatus('offline');
+            getCameraIds().forEach((cameraId) => updateCameraStatus('offline', cameraId));
         }
 
         // Auto-show feed if camera is already running (e.g. auto-started preview)
         if (cameraOn || previewActive) {
-            const feed = document.getElementById('camera-feed');
-            const offline = document.getElementById('camera-offline');
-            if (feed) {
-                feed.src = '/video_feed?' + Date.now();
-                feed.style.display = 'block';
-            }
-            if (offline) offline.style.display = 'none';
+            getCameraIds().forEach((cameraId) => {
+                setCameraFeedLive(cameraId);
+            });
         }
+
+        setScheduleUI(window.TRIP_SCHEDULE);
 
         // Initialize WebSocket listeners for dashboard
         initDashboardSocket();

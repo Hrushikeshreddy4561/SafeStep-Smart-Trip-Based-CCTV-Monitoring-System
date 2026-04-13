@@ -33,15 +33,307 @@ from webapp.models import (
     get_unreviewed_count, get_total_stats, get_user_by_id,
     get_trip_sessions, upsert_known_face_activity,
     get_known_face_activity_map, delete_known_face_activity,
-    delete_alert_for_user, delete_all_alerts_for_user
+    delete_alert_for_user, delete_all_alerts_for_user,
+    get_trip_schedule, upsert_trip_schedule, disable_trip_schedule,
+    set_schedule_active_by_schedule, get_enabled_trip_schedules,
+    get_camera_configs_for_user, upsert_camera_config
 )
-from webapp.cctv_runner import cctv_runner
+from webapp.cctv_runner import cctv_runner, cctv_manager
 from webapp.email_service import send_intruder_alert
 from webapp.supabase_storage import upload_evidence_image
 
 main_bp = Blueprint('main', __name__)
 
 ALLOWED_KNOWN_FACE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp'}
+SCHEDULE_DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+LOCATION_TO_PRIORITY = {
+    'indoor': 'high',
+    'outdoor': 'low',
+    'parking': 'medium',
+}
+PRIORITY_ORDER = ['high', 'medium', 'low']
+
+
+def _normalize_priority(value):
+    v = (value or '').strip().lower()
+    return v if v in PRIORITY_ORDER else 'high'
+
+
+def _normalize_location(value):
+    v = (value or '').strip().lower()
+    return v if v in LOCATION_TO_PRIORITY else 'indoor'
+
+
+def _priority_allows_alert(priority_level, alert_level):
+    p = _normalize_priority(priority_level)
+    level = (alert_level or '').upper()
+    if p == 'high':
+        return True
+    if p == 'medium':
+        return level in ('HIGH', 'CRITICAL')
+    return level == 'CRITICAL'
+
+
+def _ensure_camera_configs_for_user(user_id):
+    cameras = cctv_manager.list_cameras()
+    existing = {
+        int(row['camera_id']): row
+        for row in get_camera_configs_for_user(user_id)
+    }
+    for cam in cameras:
+        cam_id = int(cam['id'])
+        if cam_id in existing:
+            continue
+        default_location = 'indoor' if cam_id == 0 else 'outdoor'
+        default_priority = LOCATION_TO_PRIORITY[default_location]
+        upsert_camera_config(
+            user_id,
+            cam_id,
+            cam['label'],
+            location_type=default_location,
+            priority_level=default_priority,
+            trip_enabled=True,
+        )
+
+
+def _camera_config_map(user_id):
+    _ensure_camera_configs_for_user(user_id)
+    rows = get_camera_configs_for_user(user_id)
+    result = {}
+    for row in rows:
+        cid = int(row['camera_id'])
+        result[cid] = {
+            'camera_id': cid,
+            'camera_label': row['camera_label'],
+            'location_type': _normalize_location(row['location_type']),
+            'priority_level': _normalize_priority(row['priority_level']),
+            'trip_enabled': bool(row['trip_enabled']),
+        }
+    return result
+
+
+def _parse_days_csv(days_csv):
+    if not days_csv:
+        return set()
+    return {d.strip().lower() for d in days_csv.split(',') if d.strip()}
+
+
+def _format_schedule_payload(row):
+    if not row:
+        return None
+
+    days = [d for d in (row['days_csv'] or '').split(',') if d]
+    in_window = _is_schedule_active_now(row)
+    return {
+        'start_time': row['start_time'],
+        'end_time': row['end_time'],
+        'days': days,
+        'enabled': bool(row['enabled']),
+        'active_by_schedule': bool(row['active_by_schedule']),
+        'active_now': in_window,
+    }
+
+
+def _is_schedule_active_now(row, now=None):
+    if not row or not row['enabled']:
+        return False
+
+    try:
+        start_t = datetime.datetime.strptime(row['start_time'], '%H:%M').time()
+        end_t = datetime.datetime.strptime(row['end_time'], '%H:%M').time()
+    except Exception:
+        return False
+
+    now = now or datetime.datetime.now()
+    now_t = now.time()
+
+    days = _parse_days_csv(row['days_csv'] or '')
+    if not days:
+        return False
+    today_key = SCHEDULE_DAY_KEYS[now.weekday()]
+
+    if start_t < end_t:
+        day_ok = today_key in days
+        return day_ok and (start_t <= now_t < end_t)
+
+    if start_t > end_t:
+        if now_t >= start_t:
+            day_ok = today_key in days
+            return day_ok
+        prev_day_key = SCHEDULE_DAY_KEYS[(now.weekday() - 1) % 7]
+        day_ok_prev = prev_day_key in days
+        return day_ok_prev and (now_t < end_t)
+
+    return False
+
+
+def _build_trip_callbacks():
+    config_cache = {}
+
+    def on_alert(user_id, trip_session_id, face_paths, body_path, alert_level,
+                 familiar_names, camera_id=None, camera_label=None):
+        capture_camera_label = (camera_label or 'cam1').strip() or 'cam1'
+        cid = int(camera_id) if camera_id is not None else 0
+
+        cfg_map = config_cache.get(user_id)
+        if cfg_map is None:
+            cfg_map = _camera_config_map(user_id)
+            config_cache[user_id] = cfg_map
+
+        cfg = cfg_map.get(cid)
+        if not cfg:
+            # Backward-safe default if config row missing.
+            cfg = {
+                'trip_enabled': True,
+                'priority_level': 'high',
+            }
+
+        if not cfg.get('trip_enabled', True):
+            return
+
+        if not _priority_allows_alert(cfg.get('priority_level', 'high'), alert_level):
+            return
+
+        face_basenames = [os.path.basename(fp) for fp in face_paths]
+        body_basename = os.path.basename(body_path) if body_path else ""
+        alert_id = create_alert(user_id, trip_session_id, alert_level,
+                    face_basenames, body_basename,
+                    camera_label=capture_camera_label)
+
+        for name in familiar_names or []:
+            upsert_known_face_activity(
+                user_id,
+                name,
+                seen_in_alert=True
+            )
+
+        def _upload_and_email():
+            cloud_face_urls = []
+            for fp in face_paths:
+                url = upload_evidence_image(fp)
+                cloud_face_urls.append(url if url else "")
+
+            cloud_body_url = ""
+            if body_path:
+                cloud_body_url = upload_evidence_image(body_path) or ""
+
+            user = get_user_by_id(user_id)
+            if user:
+                success = send_intruder_alert(
+                    user, alert_id, face_paths, body_path, alert_level,
+                    cloud_face_urls=cloud_face_urls,
+                    cloud_body_url=cloud_body_url,
+                    camera_label=capture_camera_label
+                )
+                if success:
+                    mark_alert_emailed(alert_id)
+
+            _emit_socketio('new_alert', {
+                'alert_id': alert_id,
+                'alert_level': alert_level,
+                'face_count': len(face_paths),
+                'camera_id': camera_id,
+                'camera_label': capture_camera_label,
+                'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'cloud_face_url': cloud_face_urls[0] if cloud_face_urls else "",
+            })
+
+        threading.Thread(target=_upload_and_email, daemon=True).start()
+
+    def on_familiar_seen(user_id, familiar_names, camera_id=None, camera_label=None):
+        for name in familiar_names:
+            upsert_known_face_activity(user_id, name, seen_in_camera=True)
+        _emit_socketio('familiar_seen', {
+            'names': familiar_names,
+            'camera_id': camera_id,
+            'camera_label': camera_label,
+            'timestamp': datetime.datetime.now().strftime("%H:%M:%S"),
+        })
+
+    return on_alert, on_familiar_seen
+
+
+def _start_trip_for_user(user_id, from_schedule=False):
+    existing = get_active_trip(user_id)
+    if existing and cctv_manager.is_trip_active:
+        return True, 'Trip already active', existing['id'], False
+
+    if existing and not cctv_manager.is_trip_active:
+        end_trip_session(existing['id'])
+
+    session_id = start_trip_session(user_id)
+    on_alert, on_familiar_seen = _build_trip_callbacks()
+    cctv_manager.set_familiar_seen_callback_all(on_familiar_seen)
+
+    cfg_map = _camera_config_map(user_id)
+    selected_camera_ids = [
+        cid for cid, cfg in cfg_map.items()
+        if cfg.get('trip_enabled', True)
+    ]
+    if not selected_camera_ids:
+        end_trip_session(session_id)
+        return False, 'No cameras selected for trip monitoring. Configure Cameras page first.', None, False
+
+    success = cctv_manager.start_trip_selected(
+        user_id,
+        session_id,
+        selected_camera_ids=selected_camera_ids,
+        on_alert_callback=on_alert
+    )
+
+    if not success:
+        end_trip_session(session_id)
+        return False, 'Failed to start camera. Make sure it is connected and not in use by another app.', None, False
+
+    if from_schedule:
+        set_schedule_active_by_schedule(user_id, True)
+
+    _emit_socketio('status_update', {
+        'trip_active': True,
+        'camera_on': True,
+        'preview_active': False,
+        'cameras': cctv_manager.get_camera_statuses(),
+        'schedule': _format_schedule_payload(get_trip_schedule(user_id)),
+    })
+    return True, 'Trip mode activated', session_id, True
+
+
+def _stop_trip_for_user(user_id, from_schedule=False):
+    trip = get_active_trip(user_id)
+    if trip:
+        end_trip_session(trip['id'])
+
+    cctv_manager.set_familiar_seen_callback_all(None)
+    cctv_manager.stop_trip_all()
+
+    if from_schedule:
+        set_schedule_active_by_schedule(user_id, False)
+
+    _emit_socketio('status_update', {
+        'trip_active': False,
+        'camera_on': cctv_manager.is_camera_on,
+        'preview_active': cctv_manager.is_preview_active,
+        'cameras': cctv_manager.get_camera_statuses(),
+        'schedule': _format_schedule_payload(get_trip_schedule(user_id)),
+    })
+    return True, 'Trip mode deactivated'
+
+
+def process_trip_schedules(_app=None):
+    """Background scheduler job: auto start/stop trip mode by saved windows."""
+    now = datetime.datetime.now()
+    rows = get_enabled_trip_schedules()
+    for row in rows:
+        user_id = row['user_id']
+        should_run_now = _is_schedule_active_now(row, now)
+        active_by_schedule = bool(row['active_by_schedule'])
+
+        if should_run_now and not active_by_schedule:
+            ok, _, _, started_new = _start_trip_for_user(user_id, from_schedule=False)
+            if ok and started_new:
+                set_schedule_active_by_schedule(user_id, True)
+        elif (not should_run_now) and active_by_schedule:
+            _stop_trip_for_user(user_id, from_schedule=True)
 
 
 def _slugify_face_name(name):
@@ -75,7 +367,7 @@ def _load_known_faces():
 def _refresh_known_faces_in_system():
     if os.path.exists(config.EMBEDDINGS_CACHE):
         os.remove(config.EMBEDDINGS_CACHE)
-    cctv_runner.reload_known_faces()
+    cctv_manager.reload_known_faces()
 
 
 def _delete_evidence_file(filename):
@@ -111,7 +403,7 @@ def index():
 def dashboard():
     # Sync: if runner says trip is active, make sure DB agrees
     trip = get_active_trip(current_user.id)
-    runner_trip_active = cctv_runner.is_trip_active
+    runner_trip_active = cctv_manager.is_trip_active
 
     # Fix ghost sessions: DB says active but runner says no
     if trip and not runner_trip_active:
@@ -120,11 +412,60 @@ def dashboard():
 
     stats = get_total_stats(current_user.id)
     unreviewed = get_unreviewed_count(current_user.id)
+    schedule = get_trip_schedule(current_user.id)
+    camera_statuses = cctv_manager.get_camera_statuses()
+    camera_ids = [c['id'] for c in camera_statuses]
     return render_template('dashboard.html',
                            trip=trip, stats=stats, unreviewed=unreviewed,
                            runner_trip_active=runner_trip_active,
-                           camera_on=cctv_runner.is_camera_on,
-                           preview_active=cctv_runner.is_preview_active)
+                           camera_on=cctv_manager.is_camera_on,
+                           preview_active=cctv_manager.is_preview_active,
+                           trip_schedule=_format_schedule_payload(schedule),
+                           cameras=camera_statuses,
+                           camera_ids=camera_ids,
+                           primary_camera_id=cctv_manager.primary_camera_id)
+
+
+@main_bp.route('/cameras')
+@login_required
+def cameras_page():
+    _ensure_camera_configs_for_user(current_user.id)
+    config_map = _camera_config_map(current_user.id)
+    camera_rows = []
+    for cam in cctv_manager.list_cameras():
+        cid = int(cam['id'])
+        cfg = config_map.get(cid, {})
+        camera_rows.append({
+            'id': cid,
+            'label': cam['label'],
+            'source': cam['source'],
+            'location_type': cfg.get('location_type', 'indoor'),
+            'priority_level': cfg.get('priority_level', 'high'),
+            'trip_enabled': bool(cfg.get('trip_enabled', True)),
+        })
+    return render_template('cameras.html', cameras=camera_rows)
+
+
+@main_bp.route('/cameras/save', methods=['POST'])
+@login_required
+def cameras_save():
+    cameras = cctv_manager.list_cameras()
+    for cam in cameras:
+        cid = int(cam['id'])
+        location = _normalize_location(request.form.get(f'location_{cid}', 'indoor'))
+        priority = _normalize_priority(request.form.get(f'priority_{cid}', LOCATION_TO_PRIORITY[location]))
+        trip_enabled = bool(request.form.get(f'trip_enabled_{cid}'))
+        upsert_camera_config(
+            current_user.id,
+            cid,
+            cam['label'],
+            location_type=location,
+            priority_level=priority,
+            trip_enabled=trip_enabled,
+        )
+
+    flash('Camera configuration saved.', 'success')
+    return redirect(url_for('main.cameras_page'))
 
 
 @main_bp.route('/logs')
@@ -214,7 +555,7 @@ def delete_all_alerts():
 @main_bp.route('/known-faces')
 @login_required
 def known_faces_page():
-    trip_active = cctv_runner.is_trip_active or bool(get_active_trip(current_user.id))
+    trip_active = cctv_manager.is_trip_active or bool(get_active_trip(current_user.id))
     known_faces = _load_known_faces()
     activity_map = get_known_face_activity_map(current_user.id)
     for face in known_faces:
@@ -236,7 +577,7 @@ def known_faces_image(filename):
 @main_bp.route('/known-faces/add', methods=['POST'])
 @login_required
 def add_known_face():
-    if cctv_runner.is_trip_active or get_active_trip(current_user.id):
+    if cctv_manager.is_trip_active or get_active_trip(current_user.id):
         flash('Stop Trip Mode before adding a new face.', 'error')
         return redirect(url_for('main.known_faces_page'))
 
@@ -299,13 +640,13 @@ def delete_known_face(filename):
 
 # ─── Video Stream ─────────────────────────────────────────────────────────────
 
-def generate_frames():
+def generate_frames(camera_id=None):
     """Generator for MJPEG streaming with adaptive timing."""
     import time
     target_interval = 1.0 / config.FPS_TARGET
     while True:
         t0 = time.monotonic()
-        frame = cctv_runner.get_frame()
+        frame = cctv_manager.get_frame(camera_id)
         if frame:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
@@ -322,7 +663,16 @@ def generate_frames():
 @main_bp.route('/video_feed')
 @login_required
 def video_feed():
-    return Response(generate_frames(),
+    return Response(generate_frames(cctv_manager.primary_camera_id),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@main_bp.route('/video_feed/<int:camera_id>')
+@login_required
+def video_feed_camera(camera_id):
+    if cctv_manager.get_runner(camera_id) is None:
+        return Response(status=404)
+    return Response(generate_frames(camera_id),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -343,9 +693,10 @@ def api_status():
     trip = get_active_trip(current_user.id)
     unreviewed = get_unreviewed_count(current_user.id)
     stats = get_total_stats(current_user.id)
+    schedule = get_trip_schedule(current_user.id)
 
     # Runner is the source of truth for trip state
-    runner_trip = cctv_runner.is_trip_active
+    runner_trip = cctv_manager.is_trip_active
 
     # Fix ghost sessions: DB says active but runner says no
     if trip and not runner_trip:
@@ -366,10 +717,12 @@ def api_status():
         }
 
     return jsonify({
-        "camera_on": cctv_runner.is_camera_on,
+        "camera_on": cctv_manager.is_camera_on,
         "trip_active": runner_trip,
-        "preview_active": cctv_runner.is_preview_active,
+        "preview_active": cctv_manager.is_preview_active,
+        "cameras": cctv_manager.get_camera_statuses(),
         "trip": trip_data,
+        "schedule": _format_schedule_payload(schedule),
         "unreviewed_alerts": unreviewed,
         "stats": stats
     })
@@ -379,7 +732,7 @@ def api_status():
 @login_required
 def api_start_camera():
     """Start camera preview."""
-    cctv_runner.start_preview()
+    cctv_manager.start_preview_all()
     return jsonify({"success": True, "message": "Camera preview started"})
 
 
@@ -387,9 +740,7 @@ def api_start_camera():
 @login_required
 def api_stop_camera():
     """Stop camera — releases hardware."""
-    cctv_runner.stop_preview()
-    cctv_runner._stop_loop()
-    cctv_runner.stop_camera()
+    cctv_manager.stop_all()
     return jsonify({"success": True, "message": "Camera stopped"})
 
 
@@ -397,113 +748,71 @@ def api_stop_camera():
 @login_required
 def api_start_trip():
     """Start trip mode — activates full detection."""
-    existing = get_active_trip(current_user.id)
-    if existing:
-        if cctv_runner.is_trip_active:
-            return jsonify({"success": False, "message": "Trip already active"})
-        else:
-            # Ghost session: DB thinks it's active but runner is not
-            end_trip_session(existing['id'])
-
-    session_id = start_trip_session(current_user.id)
-
-    def on_alert(user_id, trip_session_id, face_paths, body_path, alert_level, familiar_names):
-        """Called when an unknown person is captured. Runs in background thread."""
-        # Save to database with local basenames first
-        face_basenames = [os.path.basename(fp) for fp in face_paths]
-        body_basename = os.path.basename(body_path) if body_path else ""
-        alert_id = create_alert(user_id, trip_session_id, alert_level,
-                                face_basenames, body_basename)
-
-        for name in familiar_names or []:
-            upsert_known_face_activity(
-                user_id,
-                name,
-                seen_in_alert=True
-            )
-
-        # Upload to Supabase in background and send email with cloud URLs
-        def _upload_and_email():
-            # Upload all evidence images to Supabase
-            cloud_face_urls = []
-            for fp in face_paths:
-                url = upload_evidence_image(fp)
-                cloud_face_urls.append(url if url else "")
-
-            cloud_body_url = ""
-            if body_path:
-                cloud_body_url = upload_evidence_image(body_path) or ""
-
-            # Send email with cloud URLs (accessible from anywhere)
-            user = get_user_by_id(user_id)
-            if user:
-                success = send_intruder_alert(
-                    user, alert_id, face_paths, body_path, alert_level,
-                    cloud_face_urls=cloud_face_urls,
-                    cloud_body_url=cloud_body_url
-                )
-                if success:
-                    mark_alert_emailed(alert_id)
-
-            # Push real-time alert to dashboard via WebSocket
-            _emit_socketio('new_alert', {
-                'alert_id': alert_id,
-                'alert_level': alert_level,
-                'face_count': len(face_paths),
-                'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'cloud_face_url': cloud_face_urls[0] if cloud_face_urls else "",
-            })
-
-        # Run upload+email in background thread so camera loop isn't blocked
-        threading.Thread(target=_upload_and_email, daemon=True).start()
-
-    def on_familiar_seen(user_id, familiar_names):
-        for name in familiar_names:
-            upsert_known_face_activity(user_id, name, seen_in_camera=True)
-        # Push familiar sighting to dashboard
-        _emit_socketio('familiar_seen', {
-            'names': familiar_names,
-            'timestamp': datetime.datetime.now().strftime("%H:%M:%S"),
-        })
-
-    cctv_runner.set_familiar_seen_callback(on_familiar_seen)
-
-    success = cctv_runner.start_trip_mode(current_user.id, session_id,
-                                 on_alert_callback=on_alert)
-
-    if not success:
-        end_trip_session(session_id)
-        return jsonify({"success": False, "message": "Failed to start camera. Make sure it is connected and not in use by another app."})
-
-    # Push status update via WebSocket
-    _emit_socketio('status_update', {
-        'trip_active': True,
-        'camera_on': True,
-        'preview_active': False,
-    })
-
-    return jsonify({"success": True, "message": "Trip mode activated",
-                    "session_id": session_id})
+    ok, message, session_id, _started_new = _start_trip_for_user(current_user.id)
+    if not ok:
+        return jsonify({"success": False, "message": message})
+    return jsonify({"success": True, "message": message, "session_id": session_id})
 
 
 @main_bp.route('/api/trip/stop', methods=['POST'])
 @login_required
 def api_stop_trip():
     """Stop trip mode."""
-    trip = get_active_trip(current_user.id)
-    if trip:
-        end_trip_session(trip['id'])
-    cctv_runner.set_familiar_seen_callback(None)
-    cctv_runner.stop_trip_mode()
+    ok, message = _stop_trip_for_user(current_user.id)
+    return jsonify({"success": ok, "message": message})
 
-    # Push status update via WebSocket
-    _emit_socketio('status_update', {
-        'trip_active': False,
-        'camera_on': cctv_runner.is_camera_on,
-        'preview_active': cctv_runner.is_preview_active,
+
+@main_bp.route('/api/trip/schedule')
+@login_required
+def api_trip_schedule_get():
+    row = get_trip_schedule(current_user.id)
+    return jsonify({"success": True, "schedule": _format_schedule_payload(row)})
+
+
+@main_bp.route('/api/trip/schedule', methods=['POST'])
+@login_required
+def api_trip_schedule_set():
+    payload = request.get_json(silent=True) or {}
+    start_time = (payload.get('start_time') or '').strip()
+    end_time = (payload.get('end_time') or '').strip()
+    days = payload.get('days') or []
+
+    try:
+        datetime.datetime.strptime(start_time, '%H:%M')
+        datetime.datetime.strptime(end_time, '%H:%M')
+    except Exception:
+        return jsonify({"success": False, "message": "Invalid time format. Use HH:MM."}), 400
+
+    if start_time == end_time:
+        return jsonify({"success": False, "message": "Start and end time cannot be the same."}), 400
+
+    if not isinstance(days, list):
+        return jsonify({"success": False, "message": "Days must be a list."}), 400
+
+    safe_days = [d for d in [str(x).lower().strip() for x in days] if d in SCHEDULE_DAY_KEYS]
+    if not safe_days:
+        return jsonify({"success": False, "message": "Please select at least one day."}), 400
+    days_csv = ','.join(sorted(set(safe_days), key=SCHEDULE_DAY_KEYS.index))
+
+    upsert_trip_schedule(current_user.id, start_time, end_time, days_csv, enabled=True)
+    row = get_trip_schedule(current_user.id)
+    return jsonify({
+        "success": True,
+        "message": "Trip schedule saved.",
+        "schedule": _format_schedule_payload(row)
     })
 
-    return jsonify({"success": True, "message": "Trip mode deactivated"})
+
+@main_bp.route('/api/trip/schedule/disable', methods=['POST'])
+@login_required
+def api_trip_schedule_disable():
+    disable_trip_schedule(current_user.id)
+    row = get_trip_schedule(current_user.id)
+    return jsonify({
+        "success": True,
+        "message": "Trip schedule disabled.",
+        "schedule": _format_schedule_payload(row)
+    })
 
 
 @main_bp.route('/api/alerts')
@@ -519,6 +828,7 @@ def api_alerts():
             "timestamp": a['timestamp'],
             "face_images": json.loads(a['face_image_paths'] or '[]'),
             "body_image": a['body_image_path'],
+            "camera_label": a['camera_label'] if 'camera_label' in a.keys() else '',
             "email_sent": bool(a['email_sent']),
             "reviewed": bool(a['reviewed']),
             "action_taken": a['action_taken']
