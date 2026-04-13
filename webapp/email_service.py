@@ -16,8 +16,8 @@ from dotenv import load_dotenv
 
 WEBAPP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(WEBAPP_DIR)
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
-load_dotenv(os.path.join(WEBAPP_DIR, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=True)
+load_dotenv(os.path.join(WEBAPP_DIR, ".env"), override=False)
 
 EMAILJS_API_URL = "https://api.emailjs.com/api/v1.0/email/send"
 EMAILJS_PUBLIC_KEY = os.getenv("EMAILJS_PUBLIC_KEY", "")
@@ -56,7 +56,8 @@ def _send_email(template_id, template_params):
 
 
 def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level,
-                        cloud_face_urls=None, cloud_body_url=None):
+                        cloud_face_urls=None, cloud_body_url=None,
+                        camera_label="cam1"):
     """
     Send an intruder alert email with captured face details.
 
@@ -73,18 +74,25 @@ def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level,
     now = datetime.datetime.now()
     timestamp = now.strftime("%B %d, %Y at %I:%M %p")
 
-    # Use cloud URLs if available, otherwise fall back to local
-    if cloud_face_urls and cloud_face_urls[0]:
-        face_url_primary = cloud_face_urls[0]
-    else:
+    # Use cloud URLs if available, otherwise fall back to local.
+    # NOTE: localhost links will not render in external email clients.
+    face_url_primary = ""
+    if cloud_face_urls:
+        for url in cloud_face_urls:
+            if url:
+                face_url_primary = url
+                break
+    if not face_url_primary:
         face_url_primary = (f"{APP_URL}/evidence/{os.path.basename(face_paths[0])}"
                             if face_paths else "")
 
-    if cloud_body_url:
-        body_url = cloud_body_url
-    else:
-        body_url = (f"{APP_URL}/evidence/{os.path.basename(body_path)}"
-                    if body_path else "")
+    body_url = (cloud_body_url or
+                (f"{APP_URL}/evidence/{os.path.basename(body_path)}"
+                 if body_path else ""))
+
+    # If face URL is missing but body URL exists, reuse body URL as email image.
+    if not face_url_primary and body_url:
+        face_url_primary = body_url
 
     review_link = f"{APP_URL}/alerts/{alert_id}"
 
@@ -94,7 +102,7 @@ def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level,
         f"Alert Level: {alert_level}\n"
         f"Time: {timestamp}\n"
         f"Unknown faces detected: {face_count}\n"
-        f"Camera: CAM-01"
+        f"Camera: {camera_label}"
     )
 
     template_params = {
@@ -104,11 +112,22 @@ def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level,
         "alert_level": alert_level,
         "timestamp": timestamp,
         "face_count": str(face_count),
+        "camera_label": camera_label,
         "alert_details": alert_details,
         "review_link": review_link,
+        # Common variable names used in EmailJS templates
+        "image_url": face_url_primary,
+        "image": face_url_primary,
+        "alert_image": face_url_primary,
+        "face_url": face_url_primary,
         "face_image_url": face_url_primary,
         "body_image_url": body_url,
     }
+
+    if not face_url_primary:
+        print("[EMAIL] Warning: no image URL available for alert email.")
+    elif "localhost" in face_url_primary or "127.0.0.1" in face_url_primary:
+        print("[EMAIL] Warning: alert email image URL is local and may not render externally.")
 
     return _send_email(EMAILJS_ALERT_TEMPLATE_ID, template_params)
 

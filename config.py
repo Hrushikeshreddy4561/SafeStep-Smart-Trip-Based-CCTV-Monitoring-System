@@ -21,6 +21,14 @@ EMBEDDINGS_CACHE = os.path.join(BASE_DIR, "embeddings.pkl")
 #   "C:/path/to/clip.mp4"    -> recorded video file
 CAMERA_INDEX  = 0
 
+# For parallel multi-camera processing, define a list of sources.
+# If left empty/undefined, the system falls back to CAMERA_INDEX.
+# Example:
+# CAMERA_SOURCES = [0, 1]
+# CAMERA_SOURCES = ["rtsp://cam-1", "rtsp://cam-2"]
+# Using [0, 0] mirrors the same physical camera in two windows.
+CAMERA_SOURCES = [0, 0]
+
 FRAME_WIDTH   = 640
 FRAME_HEIGHT  = 480
 FPS_TARGET    = 20

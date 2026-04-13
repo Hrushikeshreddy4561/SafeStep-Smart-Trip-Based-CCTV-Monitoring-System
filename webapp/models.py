@@ -53,6 +53,7 @@ def init_db():
             trip_session_id INTEGER,
             alert_level TEXT NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            camera_label TEXT DEFAULT '',
             face_image_paths TEXT DEFAULT '[]',
             body_image_path TEXT DEFAULT '',
             email_sent INTEGER DEFAULT 0,
@@ -74,10 +75,151 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id, person_key)
         );
+
+        CREATE TABLE IF NOT EXISTS trip_schedules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            days_csv TEXT DEFAULT '',
+            enabled INTEGER DEFAULT 0,
+            active_by_schedule INTEGER DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS camera_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            camera_id INTEGER NOT NULL,
+            camera_label TEXT NOT NULL,
+            location_type TEXT DEFAULT 'indoor',
+            priority_level TEXT DEFAULT 'high',
+            trip_enabled INTEGER DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id, camera_id)
+        );
     """)
+
+    # Migration for existing databases created before camera_label existed.
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(alerts)").fetchall()]
+    if 'camera_label' not in columns:
+        conn.execute("ALTER TABLE alerts ADD COLUMN camera_label TEXT DEFAULT ''")
+
     conn.commit()
     conn.close()
     print("[DB] Database initialized.")
+
+
+def get_trip_schedule(user_id):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM trip_schedules WHERE user_id=? LIMIT 1",
+        (user_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def upsert_trip_schedule(user_id, start_time, end_time, days_csv, enabled=True):
+    now = datetime.datetime.now().isoformat()
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO trip_schedules
+           (user_id, start_time, end_time, days_csv, enabled, active_by_schedule, updated_at)
+           VALUES (?, ?, ?, ?, ?, 0, ?)
+           ON CONFLICT(user_id)
+           DO UPDATE SET
+              start_time=excluded.start_time,
+              end_time=excluded.end_time,
+              days_csv=excluded.days_csv,
+              enabled=excluded.enabled,
+              updated_at=excluded.updated_at
+        """,
+        (user_id, start_time, end_time, days_csv or '', 1 if enabled else 0, now)
+    )
+    conn.commit()
+    conn.close()
+
+
+def disable_trip_schedule(user_id):
+    now = datetime.datetime.now().isoformat()
+    conn = get_db()
+    conn.execute(
+        """UPDATE trip_schedules
+           SET enabled=0, active_by_schedule=0, updated_at=?
+           WHERE user_id=?
+        """,
+        (now, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_schedule_active_by_schedule(user_id, active):
+    now = datetime.datetime.now().isoformat()
+    conn = get_db()
+    conn.execute(
+        """UPDATE trip_schedules
+           SET active_by_schedule=?, updated_at=?
+           WHERE user_id=?
+        """,
+        (1 if active else 0, now, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_enabled_trip_schedules():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM trip_schedules WHERE enabled=1"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_camera_configs_for_user(user_id):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM camera_configs WHERE user_id=? ORDER BY camera_id",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def upsert_camera_config(user_id, camera_id, camera_label,
+                         location_type='indoor', priority_level='high',
+                         trip_enabled=True):
+    now = datetime.datetime.now().isoformat()
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO camera_configs
+           (user_id, camera_id, camera_label, location_type, priority_level, trip_enabled, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, camera_id)
+           DO UPDATE SET
+              camera_label=excluded.camera_label,
+              location_type=excluded.location_type,
+              priority_level=excluded.priority_level,
+              trip_enabled=excluded.trip_enabled,
+              updated_at=excluded.updated_at
+        """,
+        (
+            user_id,
+            int(camera_id),
+            camera_label,
+            location_type,
+            priority_level,
+            1 if trip_enabled else 0,
+            now,
+        )
+    )
+    conn.commit()
+    conn.close()
 
 
 def _person_key(name):
@@ -189,16 +331,17 @@ def get_trip_sessions(user_id, limit=10):
 
 # ─── Alert Operations ─────────────────────────────────────────────────────────
 
-def create_alert(user_id, trip_session_id, alert_level, face_paths, body_path):
+def create_alert(user_id, trip_session_id, alert_level, face_paths, body_path,
+                 camera_label=""):
     """Create a new alert record. Returns alert id."""
     conn = get_db()
     now = datetime.datetime.now().isoformat()
     cursor = conn.execute(
         """INSERT INTO alerts (user_id, trip_session_id, alert_level, timestamp,
-           face_image_paths, body_image_path)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+              camera_label, face_image_paths, body_image_path)
+              VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (user_id, trip_session_id, alert_level, now,
-         json.dumps(face_paths), body_path)
+            camera_label or "", json.dumps(face_paths), body_path)
     )
     conn.commit()
     alert_id = cursor.lastrowid

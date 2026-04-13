@@ -452,6 +452,21 @@ a:hover { color: #79b8ff; }
     object-fit: cover;
     display: block;
 }
+.camera-name-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 0.25rem 0.6rem;
+    border-radius: 50px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: lowercase;
+    letter-spacing: 0.3px;
+    background: rgba(9, 13, 20, 0.78);
+    color: #9dc8ff;
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    z-index: 2;
+}
 .camera-offline {
     display: flex;
     flex-direction: column;
@@ -657,6 +672,98 @@ a:hover { color: #79b8ff; }
     margin-top: 0.15rem;
 }
 
+.trip-schedule-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.schedule-label {
+    display: block;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.45px;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.schedule-time-input {
+    width: 100%;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(88, 166, 255, 0.18);
+    background: linear-gradient(180deg, rgba(17, 24, 39, 0.9), rgba(10, 16, 28, 0.9));
+    color: var(--text-primary);
+    padding: 0.75rem 0.9rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    outline: none;
+    transition: var(--transition);
+}
+
+.schedule-time-input:focus {
+    border-color: rgba(88, 166, 255, 0.85);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.22);
+}
+
+.schedule-time-input::-webkit-calendar-picker-indicator {
+    filter: invert(80%) sepia(8%) saturate(428%) hue-rotate(185deg) brightness(92%) contrast(95%);
+    cursor: pointer;
+}
+
+.schedule-days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.schedule-day-chip {
+    position: relative;
+    border: 1px solid var(--border-glass);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.03);
+    text-align: center;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.3rem 0.2rem;
+}
+
+.schedule-day-chip input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.schedule-day-chip input:checked + span {
+    color: #9dc8ff;
+    font-weight: 700;
+}
+
+.schedule-day-chip:has(input:checked) {
+    border-color: rgba(88, 166, 255, 0.45);
+    background: rgba(88, 166, 255, 0.12);
+}
+
+.schedule-actions {
+    margin-top: 0.9rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.55rem;
+}
+
+.schedule-actions .btn {
+    padding: 0.55rem 0.65rem;
+    font-size: 0.78rem;
+}
+
+.schedule-status {
+    margin-top: 0.75rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
 /* ─── Quick Actions ──────────────────────────────────────────────────────── */
 .quick-actions {
     display: grid;
@@ -755,6 +862,59 @@ a:hover { color: #79b8ff; }
     border-radius: var(--radius-md);
     background: rgba(255, 255, 255, 0.02);
     padding: 0.55rem;
+}
+
+/* ─── Cameras Config Page ────────────────────────────────────────────────── */
+.camera-config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.75rem;
+}
+
+.camera-config-card {
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 0.8rem;
+}
+
+.config-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+}
+
+.config-select {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-glass);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    padding: 0.52rem 0.6rem;
+    font-size: 0.82rem;
+}
+
+.config-note {
+    margin-top: 0.55rem;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+}
+
+.config-trip-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid var(--border-glass);
+    border-radius: 999px;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.config-trip-chip input {
+    accent-color: #3fb950;
 }
 
 .known-face-thumb {
@@ -893,6 +1053,30 @@ a:hover { color: #79b8ff; }
     border: 1.5px solid var(--border-glass);
 }
 
+.alert-thumb-wrap {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    flex: 0 0 56px;
+}
+
+.alert-camera-chip,
+.evidence-camera-chip {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: lowercase;
+    letter-spacing: 0.2px;
+    background: rgba(9, 13, 20, 0.82);
+    color: #9dc8ff;
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    z-index: 3;
+}
+
 .alert-info h3 {
     font-size: 0.88rem;
     font-weight: 600;
@@ -976,6 +1160,7 @@ a:hover { color: #79b8ff; }
     margin-bottom: 1.25rem;
 }
 .face-image {
+    position: relative;
     border-radius: var(--radius-md);
     overflow: hidden;
     border: 1.5px solid var(--border-glass);
@@ -1002,6 +1187,7 @@ a:hover { color: #79b8ff; }
 }
 
 .body-image {
+    position: relative;
     border-radius: var(--radius-lg);
     overflow: hidden;
     border: 1.5px solid var(--border-glass);
@@ -1168,6 +1354,10 @@ a:hover { color: #79b8ff; }
     .known-face-thumb { width: 56px; height: 56px; }
     .camera-capture-actions { grid-template-columns: 1fr; }
     .log-grid { grid-template-columns: 1fr; }
+    .trip-schedule-grid { grid-template-columns: 1fr; }
+    .schedule-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .schedule-actions { grid-template-columns: 1fr; }
+    .config-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
@@ -1175,6 +1365,7 @@ a:hover { color: #79b8ff; }
     .navbar-brand span { font-size: 1rem; }
     .navbar-inner { height: 48px; }
     .camera-container { aspect-ratio: 4 / 3; }
+    .schedule-days { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* ─── Toast Notifications (WebSocket Push) ──────────────────────────────── */

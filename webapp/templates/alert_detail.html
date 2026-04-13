@@ -35,7 +35,6 @@
                 <img src="{{ url_for('main.serve_evidence', filename=face) }}"
                      alt="Unknown person face {{ loop.index }}"
                      onerror="this.parentElement.innerHTML='<div style=&quot;padding:2rem;text-align:center;color:var(--text-muted);&quot;>Image unavailable</div>'">
-                <div class="face-label">Face #{{ loop.index }}</div>
             </div>
             {% endfor %}
         </div>
@@ -47,6 +46,7 @@
     <div class="evidence-section animate-fade-in-up" style="animation-delay: 0.2s;">
         <h2>📸 Full Scene</h2>
         <div class="body-image">
+            <span class="evidence-camera-chip">{{ alert.camera_label or 'cam1' }}</span>
             <img src="{{ url_for('main.serve_evidence', filename=alert.body_image_path) }}"
                  alt="Full scene capture"
                  onerror="this.parentElement.innerHTML='<div style=&quot;padding:2rem;text-align:center;color:var(--text-muted);&quot;>Image unavailable</div>'">
@@ -108,6 +108,7 @@
         <div style="display: grid; gap: 0.6rem; font-size: 0.9rem; color: var(--text-secondary);">
             <div><strong>Alert ID:</strong> #{{ alert.id }}</div>
             <div><strong>Level:</strong> {{ alert.alert_level }}</div>
+            <div><strong>Camera:</strong> {{ alert.camera_label or 'cam1' }}</div>
             <div><strong>Time:</strong> {{ alert.timestamp }}</div>
             <div><strong>Faces Detected:</strong> {{ alert.face_images | length }}</div>
             <div><strong>Email Sent:</strong> {{ '✅ Yes' if alert.email_sent else '❌ No' }}</div>
