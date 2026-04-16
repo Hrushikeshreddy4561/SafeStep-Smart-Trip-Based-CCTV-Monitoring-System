@@ -5,7 +5,7 @@
 <div class="page-container" style="max-width: 1100px;">
     <div class="card animate-fade-in-up">
         <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
-            <h3 class="card-title">🎥 Cameras Configuration</h3>
+            <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="video"></i> Cameras Configuration</h3>
             <span style="font-size:0.78rem; color: var(--text-secondary);">Trip mode + priority policies</span>
         </div>
 
@@ -16,7 +16,8 @@
                     <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-bottom:0.55rem;">
                         <div>
                             <div style="font-size:1rem; font-weight:700;">{{ cam.label | upper }}</div>
-                            <div style="font-size:0.72rem; color:var(--text-muted);">Source: {{ cam.source }}</div>
+                            <div style="font-size:0.72rem; color:var(--text-muted);">{{ cam.source_badge }}: {{ cam.source_display }}</div>
+                            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.18rem;">{{ cam.source_note }}</div>
                         </div>
                         <label class="config-trip-chip">
                             <input type="checkbox" name="trip_enabled_{{ cam.id }}" {% if cam.trip_enabled %}checked{% endif %}>

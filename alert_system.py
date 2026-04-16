@@ -57,6 +57,7 @@ from utils.helpers import readable_time
 # This avoids tightly coupling the alert system to the web layer.
 
 _on_capture_callback = None
+_last_session_header_at = 0.0
 
 def set_capture_callback(callback):
     """Register a function(face_paths, body_path, level, familiar_names)."""
@@ -95,15 +96,16 @@ def _burn_bar(image, label):
     return snap
 
 
-def _save_pair(clean_frame, annotated_frame, alert_level, face_boxes):
+def _save_pair(clean_frame, annotated_frame, alert_level, face_boxes,
+               camera_label=""):
     """
     Save evidence files sharing the same timestamp:
 
-      FACE_<level>_unknown_<ts>_face<N>.jpg   (one per unknown face)
+      FACE_<level>_unknown_<cam>_<ts>_face<N>.jpg   (one per unknown face)
         Clean face crop from clean_frame (no bounding boxes, no labels).
         Saves ALL unknown faces, not just the closest one.
 
-      BODY_<level>_unknown_<ts>.jpg
+      BODY_<level>_unknown_<cam>_<ts>.jpg
         Full annotated frame (with bounding boxes) + timestamp bar.
         Shows the complete body and room context.
 
@@ -111,10 +113,11 @@ def _save_pair(clean_frame, annotated_frame, alert_level, face_boxes):
     """
     os.makedirs(config.EVIDENCE_DIR, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    cam_tag = f"_{camera_label}" if camera_label else ""
 
     def fp(prefix, suffix=""):
         return os.path.join(config.EVIDENCE_DIR,
-                            f"{prefix}_{alert_level}_unknown_{ts}{suffix}.jpg")
+                            f"{prefix}_{alert_level}_unknown{cam_tag}_{ts}{suffix}.jpg")
 
     # ── FACE: crop EVERY unknown face from the CLEAN frame ───────────────────
     face_paths = []
@@ -143,8 +146,8 @@ def _save_pair(clean_frame, annotated_frame, alert_level, face_boxes):
 
     # ── BODY: full annotated frame + timestamp bar ────────────────────────────
     body_path = fp("BODY")
-    cv2.imwrite(body_path,
-                _burn_bar(annotated_frame, f"BODY | {alert_level} | unknown"))
+    bar_label = f"{camera_label} | BODY | {alert_level} | unknown" if camera_label else f"BODY | {alert_level} | unknown"
+    cv2.imwrite(body_path, _burn_bar(annotated_frame, bar_label))
 
     return face_paths, body_path
 
@@ -172,10 +175,11 @@ class AlertSystem:
       _session_active     : True while person is in zone
     """
 
-    def __init__(self, on_capture_callback=None):
+    def __init__(self, on_capture_callback=None, camera_label="cam1"):
         self._current_level     = config.ALERT_LOW
         self._log_file          = config.ALERTS_LOG
         self._on_capture_callback = on_capture_callback
+        self._camera_label      = (camera_label or "cam1").strip() or "cam1"
 
         # Time-based zone tracking
         self._last_seen_in_zone = 0.0
@@ -199,17 +203,26 @@ class AlertSystem:
         """Register per-instance capture callback for evidence events."""
         self._on_capture_callback = callback
 
+    def set_camera_label(self, camera_label):
+        """Update the camera label used in logs and evidence summaries."""
+        self._camera_label = (camera_label or "cam1").strip() or "cam1"
+
     # ─────────────────────────────────────────────────────────────────────────
 
     def _ensure_log(self):
+        global _last_session_header_at
         os.makedirs(os.path.dirname(self._log_file), exist_ok=True)
+        now = time.time()
+        if (now - _last_session_header_at) < 30:
+            return
         with open(self._log_file, 'a', encoding='utf-8') as f:
             f.write(f"\n{'='*60}\n")
             f.write(f"  SESSION STARTED: {readable_time()}\n")
             f.write(f"{'='*60}\n")
+        _last_session_header_at = now
 
     def _log(self, level, message, path=None):
-        line = f"[{readable_time()}] [{level:8s}] {message}"
+        line = f"[{readable_time()}] [{level:8s}] [{self._camera_label}] {message}"
         if path:
             line += f"  -> {path}"
         try:
@@ -254,10 +267,9 @@ class AlertSystem:
 
         if exit_confirmed:
             duration = int(now - self._session_start)
-            self._log(config.ALERT_LOW,
-                      f"Zone exit confirmed (present {duration}s, "
-                      f"absent {time_since_seen:.1f}s >= "
-                      f"{config.ABSENCE_GRACE_SEC}s grace)")
+            duration = int(now - self._session_start)
+            # Suppress "Zone exit confirmed" log as it is unnecessarily technical
+            # print(f"Zone exit confirmed (present {duration}s)")
             self._session_exit_time = self._last_seen_in_zone  # exit = last seen
             self._session_active    = False
             self._session_captured  = False
@@ -298,14 +310,13 @@ class AlertSystem:
         if has_familiar and not has_unknown:
             self._high_count    = 0
             self._current_level = config.ALERT_MEDIUM
-            names   = [f['name'] for f in face_results if f['familiar']]
+            names   = sorted({f['name'] for f in face_results if f['familiar']})
             message = f"Familiar: {', '.join(names)}"
             if not self._session_active:
                 self._session_active = True
                 self._session_start  = now
-                self._log(config.ALERT_MEDIUM,
-                          f"ZONE ENTRY (known - no image): {message}")
-                print(f"[ZONE ENTRY - known]  {readable_time()}  {message}")
+                self._log(config.ALERT_MEDIUM, f"Familiar face detected: {', '.join(names)}")
+                print(f"[{self._camera_label}] [ZONE ENTRY - known]  {readable_time()}  {message}")
             return config.ALERT_MEDIUM, message
 
         # ── Unknown face → HIGH / CRITICAL ────────────────────────────────────
@@ -334,13 +345,22 @@ class AlertSystem:
                     unknown_boxes = [f['box'] for f in face_results
                                      if not f['familiar']]
                     face_paths, body_path = _save_pair(
-                        clean_frame, annotated_frame, level, unknown_boxes
+                        clean_frame, annotated_frame, level, unknown_boxes,
+                        camera_label=self._camera_label,
                     )
-                    for fp in face_paths:
-                        self._log(level, f"CAPTURED FACE: {fp}")
-                    self._log(level, f"CAPTURED BODY: {body_path}")
+                    familiar_present = sorted({
+                        f['name'] for f in face_results
+                        if f.get('familiar') and f.get('name')
+                    })
+                    summary = (
+                        f"Unknown person detected; face images={len(face_paths)}, "
+                        f"body_saved={'yes' if body_path else 'no'}"
+                    )
+                    if familiar_present:
+                        summary += f", familiar also present: {', '.join(familiar_present)}"
+                    self._log(level, summary)
                     print(f"\n{'!'*50}")
-                    print(f"  {level} - {readable_time()}")
+                    print(f"  [{self._camera_label}] {level} - {readable_time()}")
                     print(f"  Absent {int(absent)}s >= {config.ABSENCE_TIMEOUT}s")
                     print(f"  FACES ({len(face_paths)}):")
                     for fp in face_paths:
@@ -366,7 +386,7 @@ class AlertSystem:
                            f"(need {config.ABSENCE_TIMEOUT}s, "
                            f"{secs_left}s remaining) - no capture")
                     print(f"[{msg}]")
-                    self._log(level, msg)
+                    # self._log(level, msg)  # Suppressed for clean logs
                     self._session_captured = True  # prevent repeated log spam
 
             return level, "UNKNOWN PERSON DETECTED"
@@ -397,4 +417,4 @@ class AlertSystem:
         self._last_familiar_seen = 0.0
         self._high_count        = 0
         self._current_level     = config.ALERT_LOW
-        print("[INFO] Alert system reset.")
+        print(f"[INFO] [{self._camera_label}] Alert system reset.")

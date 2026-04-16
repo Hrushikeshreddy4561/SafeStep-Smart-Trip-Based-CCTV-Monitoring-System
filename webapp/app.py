@@ -87,6 +87,7 @@ def create_app():
         import time
         time.sleep(1.5)  # Let Flask finish binding to port first
         cctv_manager.start_preview_all()
+        cctv_manager.preload_recognizers_async()
         print("[BOOT] Camera preview auto-started.")
 
     threading.Thread(target=_boot_camera, daemon=True).start()

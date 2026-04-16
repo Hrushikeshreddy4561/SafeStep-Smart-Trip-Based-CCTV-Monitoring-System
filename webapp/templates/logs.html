@@ -5,9 +5,9 @@
 <div class="page-container logs-container">
     <div class="alerts-header animate-fade-in" style="align-items: flex-start; gap: 0.75rem;">
         <div>
-            <h1>🧾 Trip Session Logs</h1>
+            <h1 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="file-text"></i> Trip Session Logs</h1>
             <p style="color: var(--text-muted); font-size: 0.82rem; margin-top: 0.2rem;">
-                Last 5 monitoring sessions with start time, end time, status, and total duration.
+                Recent monitoring sessions with camera-tagged timeline events for clearer review.
             </p>
         </div>
         <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline">← Back to Dashboard</a>
@@ -16,28 +16,57 @@
     {% if sessions %}
     <div class="logs-list">
         {% for s in sessions %}
-        <div class="log-item card animate-fade-in-up">
-            <div class="log-item-head">
-                <h3>Session #{{ s.id }}</h3>
-                <span class="log-status {{ 'log-active' if s.status == 'active' else 'log-completed' }}">
-                    {{ s.status|upper }}
-                </span>
+        <details class="log-item card animate-fade-in-up log-accordion" style="animation-delay: {{ loop.index * 0.05 }}s;">
+            <summary class="log-accordion-summary">
+                <div class="log-item-head">
+                    <h3 style="display:flex; align-items:center; gap:0.5rem;">
+                        <i data-lucide="chevron-right" class="accordion-chevron" style="width: 16px; height: 16px;"></i> 
+                        Session #{{ s.id }}
+                    </h3>
+                    <span class="log-status {{ 'log-active' if s.status == 'active' else 'log-completed' }}">
+                        {{ s.status|upper }}
+                    </span>
+                </div>
+                <div class="log-grid">
+                    <div>
+                        <p class="log-label">Started</p>
+                        <p class="log-value">{{ s.start_time }}</p>
+                    </div>
+                    <div>
+                        <p class="log-label">Ended</p>
+                        <p class="log-value">{{ s.end_time if s.end_time else 'In progress' }}</p>
+                    </div>
+                    <div>
+                        <p class="log-label">Duration</p>
+                        <p class="log-value">{{ s.duration }}</p>
+                    </div>
+                </div>
+            </summary>
+            
+            <div class="log-timeline" style="margin-top: 1.25rem; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 1.25rem;">
+                <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; display:flex; align-items:center; gap:0.4rem;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    Timeline Events
+                </h4>
+                {% if s.logs %}
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    {% for log in s.logs %}
+                        <div class="log-event-row">
+                            <div class="log-event-time">{{ log.time.split(' ')[1][:5] if log.time else '' }}</div>
+                            <div class="log-event-content">
+                                <span class="badge-{{ log.level.lower() if log.level else 'info' }}">{{ log.level }}</span>
+                                <span class="log-event-message">{{ log.message }}</span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                    </div>
+                {% else %}
+                    <div style="padding: 1rem; text-align: center; background: rgba(255,255,255,0.02); border-radius: var(--radius-sm);">
+                        <p style="font-size: 0.85rem; color: var(--text-muted); font-style: italic;">No notable events recorded during this session.</p>
+                    </div>
+                {% endif %}
             </div>
-            <div class="log-grid">
-                <div>
-                    <p class="log-label">Started</p>
-                    <p class="log-value">{{ s.start_time[:19].replace('T', ' ') if s.start_time else '-' }}</p>
-                </div>
-                <div>
-                    <p class="log-label">Ended</p>
-                    <p class="log-value">{{ s.end_time[:19].replace('T', ' ') if s.end_time else 'In progress' }}</p>
-                </div>
-                <div>
-                    <p class="log-label">Duration</p>
-                    <p class="log-value">{{ s.duration }}</p>
-                </div>
-            </div>
-        </div>
+        </details>
         {% endfor %}
     </div>
     {% else %}

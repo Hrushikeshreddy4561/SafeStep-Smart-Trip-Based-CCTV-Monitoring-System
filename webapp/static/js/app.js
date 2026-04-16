@@ -502,3 +502,10 @@ function setKnownFacesButtonDisabled(disabled) {
         }
     });
 }
+
+// Clean up video streams on page unload to prevent server connection hanging
+window.addEventListener('beforeunload', () => {
+    getCameraIds().forEach((cameraId) => {
+        setCameraFeedOffline(cameraId);
+    });
+});

@@ -27,7 +27,7 @@ CAMERA_INDEX  = 0
 # CAMERA_SOURCES = [0, 1]
 # CAMERA_SOURCES = ["rtsp://cam-1", "rtsp://cam-2"]
 # Using [0, 0] mirrors the same physical camera in two windows.
-CAMERA_SOURCES = [0, 0]
+CAMERA_SOURCES = [0, os.path.join(BASE_DIR, "test.mp4")]
 
 FRAME_WIDTH   = 640
 FRAME_HEIGHT  = 480
@@ -42,6 +42,22 @@ VIDEO_LOOP  = True
 
 # VIDEO_SPEED 1.0 -> real-time   2.0 -> double speed   0.5 -> half speed
 VIDEO_SPEED = 1.0
+
+# Minimum playback FPS for recorded video sources. Some backends report
+# extremely low or zero FPS which causes the loop to fall back to 1 FPS.
+# Raising this to 5 or 10 gives a usable preview for looped test clips.
+VIDEO_MIN_FPS = 5.0
+
+# ─── VIDEO FILE DETECTION PERFORMANCE ─────────────────────────────────────
+# Process detection pipeline every Nth frame for video file sources.
+# Frames NOT processed are still displayed smoothly (no visual stutter).
+# 1 = every frame (slow), 3 = every 3rd frame (good balance), 5 = very fast
+VIDEO_DETECT_EVERY_N_FRAMES = 3
+
+# Scale factor for motion detection input (video files only).
+# 0.5 = half resolution → 4x fewer pixels → ~2x faster motion detection.
+# Live cameras are NOT affected by this setting.
+VIDEO_DETECTION_SCALE = 0.5
 
 # ─── MOTION DETECTION ─────────────────────────────────────────────────────────
 MOTION_THRESHOLD        = 25

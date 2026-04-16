@@ -148,7 +148,6 @@ class FaceRecognizer:
             print("[WARN] Falling back to Haar cascade — recognition disabled.")
 
         # Performance: frame skipping + result caching
-        self._frame_count  = 0
         self._last_results = []
 
         self._load_known_faces()
@@ -219,14 +218,14 @@ class FaceRecognizer:
 
         print(f"[INFO] {len(names)} face(s) encoded and cached.\n")
 
-    def reload_faces(self):
-        """Hot-reload known faces. Called when user presses F in main.py."""
+    def reload_faces(self, rebuild_cache=True):
+        """Hot-reload known faces, optionally rebuilding the shared cache."""
         print("[INFO] Reloading known faces...")
         self.known_embeddings = []
         self.known_names      = []
-        if os.path.exists(config.EMBEDDINGS_CACHE):
+        if rebuild_cache and os.path.exists(config.EMBEDDINGS_CACHE):
             os.remove(config.EMBEDDINGS_CACHE)
-        self._encode_from_folder()
+        self._load_known_faces()
 
     # ── Recognition ───────────────────────────────────────────────────────────
 
@@ -254,11 +253,6 @@ class FaceRecognizer:
         Net effect: ~6x faster than running full-res every frame.
         """
         _, w = frame.shape[:2]
-
-        # Frame skip — return cached result on non-processing frames
-        self._frame_count += 1
-        if self._frame_count % 3 != 0 and self._last_results is not None:
-            return self._last_results
 
         # Tick absence tracker
         _update_absent(grace=config.ABSENCE_GRACE_SEC)

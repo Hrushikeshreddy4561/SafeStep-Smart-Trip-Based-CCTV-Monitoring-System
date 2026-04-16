@@ -95,24 +95,35 @@ def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level,
         face_url_primary = body_url
 
     review_link = f"{APP_URL}/alerts/{alert_id}"
+    camera_label = (camera_label or "cam1").strip() or "cam1"
 
     # Build a text description of images for the email template
     face_count = len(face_paths)
+    suspect_summary = (
+        "1 unknown face captured"
+        if face_count == 1 else
+        f"{face_count} unknown faces captured"
+    )
     alert_details = (
+        f"Camera: {camera_label}\n"
         f"Alert Level: {alert_level}\n"
         f"Time: {timestamp}\n"
         f"Unknown faces detected: {face_count}\n"
-        f"Camera: {camera_label}"
+        f"Review: {review_link}"
     )
 
     template_params = {
         "to_name": user['name'],
         "to_email": user['email'],
         "email": user['email'],
+        "alert_title": f"{alert_level} alert on {camera_label}",
         "alert_level": alert_level,
         "timestamp": timestamp,
         "face_count": str(face_count),
         "camera_label": camera_label,
+        "camera_heading": f"Detection on {camera_label}",
+        "camera_and_time": f"{camera_label} at {timestamp}",
+        "suspect_summary": suspect_summary,
         "alert_details": alert_details,
         "review_link": review_link,
         # Common variable names used in EmailJS templates
@@ -122,6 +133,8 @@ def send_intruder_alert(user, alert_id, face_paths, body_path, alert_level,
         "face_url": face_url_primary,
         "face_image_url": face_url_primary,
         "body_image_url": body_url,
+        "evidence_count_text": f"{face_count} face image(s) plus 1 scene image",
+        "body_image_available": "Yes" if body_url else "No",
     }
 
     if not face_url_primary:
@@ -151,7 +164,8 @@ def send_daily_summary(user, trip_start, alerts_today, trip_duration_str):
     for a in alerts_today:
         ts = a['timestamp']
         level = a['alert_level']
-        lines.append(f"  • [{level}] {ts}")
+        camera = a['camera_label'] if 'camera_label' in a.keys() else 'cam1'
+        lines.append(f"  • [{level}] {camera} | {ts}")
 
     alert_details = "\n".join(lines) if lines else "No alerts today — all clear!"
 

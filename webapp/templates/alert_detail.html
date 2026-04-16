@@ -10,17 +10,18 @@
 
     <!-- Alert Header -->
     <div class="card alert-detail-header animate-fade-in-up">
-        <div class="alert-icon">⚠️</div>
+        <div class="alert-icon" style="color: var(--danger-color);"><i data-lucide="alert-triangle" style="width: 40px; height: 40px;"></i></div>
         <h1>UNKNOWN PERSON DETECTED</h1>
         <div class="alert-meta">
             <span class="alert-level-badge badge-{{ alert.alert_level | lower }}" style="margin-right: 0.5rem;">
                 {{ alert.alert_level }}
             </span>
-            {{ alert.timestamp }}
+            {{ alert.formatted_time }}
         </div>
         {% if alert.email_sent %}
-        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--accent-green);">
-            ✉️ Email notification sent
+        <div style="margin-top: 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.8rem; background: rgba(0, 200, 100, 0.1); border-radius: 4px; border: 1px solid rgba(0, 200, 100, 0.2); font-size: 0.85rem; color: var(--accent-green);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+            Email notification sent
         </div>
         {% endif %}
     </div>
@@ -28,7 +29,7 @@
     <!-- Face Images -->
     {% if alert.face_images %}
     <div class="evidence-section animate-fade-in-up" style="animation-delay: 0.1s;">
-        <h2>👤 Captured Face(s)</h2>
+        <h2 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="user" style="width: 20px; height: 20px;"></i> Captured Face(s)</h2>
         <div class="face-gallery">
             {% for face in alert.face_images %}
             <div class="face-image">
@@ -44,7 +45,7 @@
     <!-- Body Image -->
     {% if alert.body_image_path %}
     <div class="evidence-section animate-fade-in-up" style="animation-delay: 0.2s;">
-        <h2>📸 Full Scene</h2>
+        <h2 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="image" style="width: 20px; height: 20px;"></i> Full Scene</h2>
         <div class="body-image">
             <span class="evidence-camera-chip">{{ alert.camera_label or 'cam1' }}</span>
             <img src="{{ url_for('main.serve_evidence', filename=alert.body_image_path) }}"
@@ -60,33 +61,35 @@
             <a href="tel:{{ user.police_phone or '100' }}"
                class="action-btn btn-police"
                onclick="recordAction({{ alert.id }}, 'police')"
-               id="btn-police">
-                <span class="action-icon">🚔</span>
+               id="btn-police"
+               style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <i data-lucide="phone"></i>
                 CALL POLICE
             </a>
             <a href="tel:{{ user.neighbour_phone or '' }}"
                class="action-btn btn-neighbour"
                onclick="recordAction({{ alert.id }}, 'neighbour')"
-               id="btn-neighbour">
-                <span class="action-icon">📞</span>
+               id="btn-neighbour"
+               style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <i data-lucide="phone"></i>
                 CALL NEIGHBOUR
             </a>
         </div>
 
         {% if alert.action_taken and alert.action_taken != 'none' %}
-        <div class="action-logged">
-            ✅ Action taken: <strong>{{ alert.action_taken | capitalize }}</strong> contacted
+        <div class="action-logged" style="display: flex; align-items: center; gap: 0.4rem;">
+            <i data-lucide="check-circle" style="width: 16px; height: 16px; color: var(--accent-green);"></i> Action taken: <strong>{{ alert.action_taken | capitalize }}</strong> contacted
         </div>
         {% endif %}
 
         <div style="margin-top: 1rem;">
             {% if alert.reviewed %}
-            <button class="btn-reviewed done" disabled>
-                ✅ Reviewed
+            <button class="btn-reviewed done" disabled style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%;">
+                <i data-lucide="check"></i> Reviewed
             </button>
             {% else %}
-            <button class="btn-reviewed" id="btn-review" onclick="markReviewed({{ alert.id }})">
-                ✅ Mark as Reviewed
+            <button class="btn-reviewed" id="btn-review" onclick="markReviewed({{ alert.id }})" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%;">
+                <i data-lucide="check"></i> Mark as Reviewed
             </button>
             {% endif %}
         </div>
@@ -94,8 +97,8 @@
         <form method="POST" action="{{ url_for('main.delete_alert', alert_id=alert.id) }}"
               onsubmit="return confirm('Delete this alert permanently?');"
               style="margin-top: 0.75rem;">
-            <button type="submit" class="btn btn-danger" style="width:100%;">
-                🗑 Delete This Alert
+            <button type="submit" class="btn btn-danger" style="width:100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <i data-lucide="trash-2" style="width: 18px; height: 18px;"></i> Delete This Alert
             </button>
         </form>
     </div>
@@ -103,16 +106,16 @@
     <!-- Alert Info -->
     <div class="card animate-fade-in-up" style="animation-delay: 0.4s; margin-top: 1.5rem;">
         <div class="card-header">
-            <h3 class="card-title">ℹ️ Alert Details</h3>
+            <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="info" style="width: 18px; height: 18px;"></i> Alert Details</h3>
         </div>
         <div style="display: grid; gap: 0.6rem; font-size: 0.9rem; color: var(--text-secondary);">
             <div><strong>Alert ID:</strong> #{{ alert.id }}</div>
             <div><strong>Level:</strong> {{ alert.alert_level }}</div>
             <div><strong>Camera:</strong> {{ alert.camera_label or 'cam1' }}</div>
-            <div><strong>Time:</strong> {{ alert.timestamp }}</div>
+            <div><strong>Time:</strong> {{ alert.formatted_time }}</div>
             <div><strong>Faces Detected:</strong> {{ alert.face_images | length }}</div>
-            <div><strong>Email Sent:</strong> {{ '✅ Yes' if alert.email_sent else '❌ No' }}</div>
-            <div><strong>Reviewed:</strong> {{ '✅ Yes' if alert.reviewed else '⏳ Pending' }}</div>
+            <div><strong>Email Sent:</strong> {{ '<i data-lucide="check" style="width:14px;height:14px;color:var(--accent-green);display:inline-block;vertical-align:middle;"></i> Yes'|safe if alert.email_sent else '<i data-lucide="x" style="width:14px;height:14px;color:var(--danger-color);display:inline-block;vertical-align:middle;"></i> No'|safe }}</div>
+            <div><strong>Reviewed:</strong> {{ '<i data-lucide="check" style="width:14px;height:14px;color:var(--accent-green);display:inline-block;vertical-align:middle;"></i> Yes'|safe if alert.reviewed else '<i data-lucide="clock" style="width:14px;height:14px;color:var(--text-muted);display:inline-block;vertical-align:middle;"></i> Pending'|safe }}</div>
             <div><strong>Action:</strong> {{ alert.action_taken | capitalize if alert.action_taken != 'none' else 'None yet' }}</div>
         </div>
     </div>

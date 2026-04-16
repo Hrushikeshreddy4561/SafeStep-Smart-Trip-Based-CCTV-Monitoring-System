@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-container" style="max-width: 900px;">
     <div class="alerts-header animate-fade-in">
-        <h1>🔔 Security Alerts</h1>
+        <h1 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="bell"></i> Security Alerts</h1>
         <div style="display:flex; align-items:center; gap:0.6rem;">
             <span style="color: var(--text-muted); font-size: 0.9rem;">
                 {{ alerts | length }} alert(s)
@@ -32,16 +32,16 @@
                     {% if alert.face_images %}
                     <img src="{{ url_for('main.serve_evidence', filename=alert.face_images[0]) }}"
                         class="alert-thumb" alt="Face capture"
-                        onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect fill=%22%23111827%22 width=%2264%22 height=%2264%22/><text x=%2232%22 y=%2240%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2228%22>👤</text></svg>'">
+                        onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect fill=%22%23111827%22 width=%2264%22 height=%2264%22/><circle cx=%2232%22 cy=%2224%22 r=%228%22 fill=%22%23666%22/><path d=%22M16 52c0-8.8 7.2-16 16-16s16 7.2 16 16%22 fill=%22none%22 stroke=%22%23666%22 stroke-width=%224%22/></svg>'">
                     {% else %}
-                    <div class="alert-thumb" style="background: var(--bg-secondary); display:flex; align-items:center; justify-content:center; font-size:1.5rem;">👤</div>
+                    <div class="alert-thumb" style="background: var(--bg-secondary); display:flex; align-items:center; justify-content:center;"><i data-lucide="user" style="width: 32px; height: 32px; color: var(--text-muted);"></i></div>
                     {% endif %}
                  </div>
 
                 <!-- Info -->
                 <div class="alert-info">
-                    <h3>
-                        {% if not alert.reviewed %}⚠️{% else %}✅{% endif %}
+                    <h3 style="display: flex; align-items: center; gap: 0.4rem;">
+                        {% if not alert.reviewed %}<i data-lucide="alert-circle" style="color: var(--danger-color); width: 18px; height: 18px;"></i>{% else %}<i data-lucide="check-circle" style="color: var(--accent-green); width: 18px; height: 18px;"></i>{% endif %}
                         Unknown Person Detected
                         {% if alert.face_images | length > 1 %}
                             <span style="color: var(--text-muted); font-weight: 400; font-size: 0.85rem;">
@@ -49,13 +49,13 @@
                             </span>
                         {% endif %}
                     </h3>
-                    <div class="alert-time">{{ alert.timestamp }}</div>
+                    <div class="alert-time">{{ alert.formatted_time }}</div>
                     <div style="margin-top: 0.15rem; font-size: 0.78rem; color: var(--text-secondary);">
                         Camera: {{ alert.camera_label or 'cam1' }}
                     </div>
                     {% if alert.action_taken != 'none' %}
-                    <div style="margin-top: 0.2rem; font-size: 0.8rem; color: var(--accent-green);">
-                        ✅ Action: {{ alert.action_taken | capitalize }}
+                    <div style="margin-top: 0.2rem; font-size: 0.8rem; color: var(--accent-green); display: flex; align-items: center; gap: 0.25rem;">
+                        <i data-lucide="check" style="width: 14px; height: 14px;"></i> Action: {{ alert.action_taken | capitalize }}
                     </div>
                     {% endif %}
                 </div>
@@ -68,7 +68,7 @@
             {% endfor %}
         {% else %}
             <div class="empty-state">
-                <div class="empty-icon">🎉</div>
+                <div class="empty-icon"><i data-lucide="shield-check" style="width: 48px; height: 48px; color: var(--accent-green);"></i></div>
                 <h3>No alerts yet</h3>
                 <p>Your home is secure. Alerts will appear here when unknown persons are detected during Trip Mode.</p>
             </div>

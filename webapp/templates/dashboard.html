@@ -4,8 +4,9 @@
 {% block content %}
 <div class="page-container">
     <div style="margin-bottom: 0.75rem;" class="animate-fade-in">
-        <h1 style="font-size: 1.35rem; font-weight: 700; letter-spacing: -0.3px;">
-            Welcome back, {{ current_user.name }} 👋
+        <h1
+            style="font-size: 1.35rem; font-weight: 700; letter-spacing: -0.3px; display: flex; align-items: center; gap: 0.5rem;">
+            Welcome back, {{ current_user.name }} <i data-lucide="hand" style="width: 24px; height: 24px;"></i>
         </h1>
         <p style="color: var(--text-muted); font-size: 0.82rem;">
             Your home security dashboard
@@ -17,18 +18,22 @@
         <div>
             <!-- Camera Feed -->
             <div class="card animate-fade-in-up" style="padding: 0; overflow: hidden; margin-bottom: 1.25rem;">
-                <div style="display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); padding: 0.75rem;">
+                <div
+                    style="display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); padding: 0.75rem;">
                     {% for camera in cameras %}
                     <div class="camera-container" id="camera-container-{{ camera.id }}">
                         <div class="camera-name-badge">{{ camera.label }}</div>
+                        <div style="position:absolute; left:14px; top:48px; z-index:3; padding:0.22rem 0.55rem; border-radius:999px; background:rgba(8,12,18,0.82); border:1px solid rgba(255,255,255,0.08); font-size:0.68rem; color:var(--text-secondary);">
+                            {{ camera.source_badge }}
+                        </div>
                         <img src="" class="camera-feed" id="camera-feed-{{ camera.id }}"
-                             alt="{{ camera.label }} Live Feed" style="display: none;">
+                            alt="{{ camera.label }} Live Feed" style="display: none;">
                         <div class="camera-offline" id="camera-offline-{{ camera.id }}" style="display: flex;">
-                            <span class="icon">📷</span>
+                            <i data-lucide="video-off" style="width: 18px; height: 18px;"></i>
                             <span>{{ camera.label }} is offline</span>
-                            <button class="btn btn-outline" style="margin-top: 0.5rem; font-size: 0.82rem;" onclick="startCamera()">
-                                ▶ Start Camera
-                            </button>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+                                {{ camera.source_note }}
+                            </div>
                         </div>
                         <div class="camera-status-badge" id="camera-status-{{ camera.id }}">
                             <span id="status-text-{{ camera.id }}">CONNECTING</span>
@@ -41,7 +46,8 @@
             <!-- Stats -->
             <div class="card animate-fade-in-up" style="animation-delay: 0.1s;">
                 <div class="card-header">
-                    <h3 class="card-title">📊 Overview</h3>
+                    <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;"><i
+                            data-lucide="bar-chart-2"></i> Overview</h3>
                 </div>
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -61,18 +67,19 @@
 
             <div class="card animate-fade-in-up" style="animation-delay: 0.15s; margin-top: 1rem;">
                 <div class="card-header">
-                    <h3 class="card-title">⏱ Trip Schedule</h3>
+                    <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;"><i
+                            data-lucide="clock"></i> Trip Schedule</h3>
                 </div>
                 <div class="trip-schedule-grid">
                     <div>
                         <label class="schedule-label" for="schedule-start-time">Start Time</label>
                         <input id="schedule-start-time" class="schedule-time-input" type="time"
-                               value="{{ trip_schedule.start_time if trip_schedule and trip_schedule.enabled else '' }}">
+                            value="{{ trip_schedule.start_time if trip_schedule and trip_schedule.enabled else '' }}">
                     </div>
                     <div>
                         <label class="schedule-label" for="schedule-end-time">End Time</label>
                         <input id="schedule-end-time" class="schedule-time-input" type="time"
-                               value="{{ trip_schedule.end_time if trip_schedule and trip_schedule.enabled else '' }}">
+                            value="{{ trip_schedule.end_time if trip_schedule and trip_schedule.enabled else '' }}">
                     </div>
                 </div>
 
@@ -89,8 +96,10 @@
 
                 <div class="schedule-actions">
                     <button class="btn btn-primary" type="button" onclick="saveTripSchedule()">Save Schedule</button>
-                    <button class="btn btn-outline" type="button" onclick="disableTripSchedule()">Disable Schedule</button>
-                    <button class="btn btn-danger" type="button" onclick="endTripNowFromSchedule()">End Trip Mode</button>
+                    <button class="btn btn-outline" type="button" onclick="disableTripSchedule()">Disable
+                        Schedule</button>
+                    <button class="btn btn-danger" type="button" onclick="endTripNowFromSchedule()">End Trip
+                        Mode</button>
                 </div>
 
                 <div class="schedule-status" id="schedule-status-text">
@@ -107,18 +116,19 @@
         <div class="animate-slide-right">
             <!-- Trip Mode Toggle -->
             <div class="card trip-toggle-card sidebar-section">
-                <h3>🧳 Trip Mode</h3>
+                <h3 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="briefcase"></i> Trip Mode
+                </h3>
                 <p>Activate surveillance while you're away</p>
 
                 <div class="trip-toggle-row">
                     <label class="toggle-switch">
-                        <input type="checkbox" id="trip-toggle"
-                               {% if runner_trip_active %}checked{% endif %}
-                               onchange="toggleTripMode(this.checked)">
+                        <input type="checkbox" id="trip-toggle" {% if runner_trip_active %}checked{% endif %}
+                            onchange="toggleTripMode(this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
-                    <div class="trip-status {{ 'active' if runner_trip_active else 'inactive' }}" id="trip-status-badge">
-                        {{ '🟢 MONITORING' if runner_trip_active else '⏸ STANDBY' }}
+                    <div class="trip-status {{ 'active' if runner_trip_active else 'inactive' }}"
+                        id="trip-status-badge">
+                        {{ 'MONITORING' if runner_trip_active else 'STANDBY' }}
                     </div>
                 </div>
 
@@ -133,14 +143,17 @@
             <!-- Camera Control -->
             <div class="card sidebar-section">
                 <div class="card-header">
-                    <h3 class="card-title">📷 Camera</h3>
+                    <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;"><i
+                            data-lucide="camera"></i> Camera</h3>
                 </div>
                 <div class="camera-controls">
-                    <button class="btn btn-outline" id="btn-camera-start" onclick="startCamera()">
-                        ▶ Preview
+                    <button class="btn btn-outline" id="btn-camera-start" onclick="startCamera()"
+                        style="display: flex; align-items: center; gap: 0.4rem;">
+                        <i data-lucide="play" style="width: 16px; height: 16px;"></i> Preview
                     </button>
-                    <button class="btn btn-outline" id="btn-camera-stop" onclick="stopCamera()">
-                        ⏹ Stop
+                    <button class="btn btn-outline" id="btn-camera-stop" onclick="stopCamera()"
+                        style="display: flex; align-items: center; gap: 0.4rem;">
+                        <i data-lucide="square" style="width: 16px; height: 16px;"></i> Stop
                     </button>
                 </div>
             </div>
@@ -148,26 +161,33 @@
             <!-- Quick Actions -->
             <div class="card sidebar-section">
                 <div class="card-header">
-                    <h3 class="card-title">⚡ Quick Actions</h3>
+                    <h3 class="card-title" style="display: flex; align-items: center; gap: 0.5rem;"><i
+                            data-lucide="zap"></i> Quick Actions</h3>
                 </div>
                 <div class="quick-actions">
-                    <a href="{{ url_for('main.alerts_page') }}" class="btn btn-outline">
-                        🔔 View Alerts
+                    <a href="{{ url_for('main.alerts_page') }}" class="btn btn-outline"
+                        style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i data-lucide="bell" style="width: 16px; height: 16px;"></i> View Alerts
                         {% if unreviewed > 0 %}
                         <span class="nav-badge">{{ unreviewed }}</span>
                         {% endif %}
                     </a>
-                    <a href="{{ url_for('main.known_faces_page') }}" class="btn btn-outline" id="btn-known-faces">
-                        👥 Known Faces
+                    <a href="{{ url_for('main.known_faces_page') }}" class="btn btn-outline" id="btn-known-faces"
+                        style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i data-lucide="users" style="width: 16px; height: 16px;"></i> Known Faces
                     </a>
-                    <a href="{{ url_for('main.logs_page') }}" class="btn btn-outline">
-                        🧾 Session Logs
+                    <a href="{{ url_for('main.logs_page') }}" class="btn btn-outline"
+                        style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i data-lucide="file-text" style="width: 16px; height: 16px;"></i> Session Logs
                     </a>
-                    <a href="{{ url_for('main.cameras_page') }}" class="btn btn-outline">
-                        🎥 Cameras
+                    <a href="{{ url_for('main.cameras_page') }}" class="btn btn-outline"
+                        style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i data-lucide="video" style="width: 16px; height: 16px;"></i> Cameras
                     </a>
-                    <a href="tel:{{ current_user.police_phone or '100' }}" class="emergency-btn">
-                        🚨 Emergency: {{ current_user.police_phone or '100' }}
+                    <a href="tel:{{ current_user.police_phone or '100' }}" class="emergency-btn"
+                        style="display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
+                        <i data-lucide="alert-triangle" style="width: 16px; height: 16px;"></i> Emergency: {{
+                        current_user.police_phone or '100' }}
                     </a>
                 </div>
             </div>
@@ -181,40 +201,40 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         window.CAMERA_IDS = {{ camera_ids | tojson }};
-        window.PRIMARY_CAMERA_ID = {{ primary_camera_id }};
-        window.TRIP_SCHEDULE = {{ trip_schedule | tojson }};
+    window.PRIMARY_CAMERA_ID = {{ primary_camera_id }};
+    window.TRIP_SCHEDULE = {{ trip_schedule | tojson }};
 
-        // Use runner state as source of truth (passed from server)
-        const tripActive = {{ 'true' if runner_trip_active else 'false' }};
-        const cameraOn = {{ 'true' if camera_on else 'false' }};
-        const previewActive = {{ 'true' if preview_active else 'false' }};
+    // Use runner state as source of truth (passed from server)
+    const tripActive = {{ 'true' if runner_trip_active else 'false' }};
+    const cameraOn = {{ 'true' if camera_on else 'false' }};
+    const previewActive = {{ 'true' if preview_active else 'false' }};
 
-        setKnownFacesButtonDisabled(tripActive);
+    setKnownFacesButtonDisabled(tripActive);
 
-        // Set initial camera status
-        if (tripActive) {
-            getCameraIds().forEach((cameraId) => updateCameraStatus('monitoring', cameraId));
-        } else if (cameraOn || previewActive) {
-            getCameraIds().forEach((cameraId) => updateCameraStatus('standby', cameraId));
-        } else {
-            getCameraIds().forEach((cameraId) => updateCameraStatus('offline', cameraId));
-        }
+    // Set initial camera status
+    if (tripActive) {
+        getCameraIds().forEach((cameraId) => updateCameraStatus('monitoring', cameraId));
+    } else if (cameraOn || previewActive) {
+        getCameraIds().forEach((cameraId) => updateCameraStatus('standby', cameraId));
+    } else {
+        getCameraIds().forEach((cameraId) => updateCameraStatus('offline', cameraId));
+    }
 
-        // Auto-show feed if camera is already running (e.g. auto-started preview)
-        if (cameraOn || previewActive) {
-            getCameraIds().forEach((cameraId) => {
-                setCameraFeedLive(cameraId);
-            });
-        }
+    // Auto-show feed if camera is already running (e.g. auto-started preview)
+    if (cameraOn || previewActive) {
+        getCameraIds().forEach((cameraId) => {
+            setCameraFeedLive(cameraId);
+        });
+    }
 
-        setScheduleUI(window.TRIP_SCHEDULE);
+    setScheduleUI(window.TRIP_SCHEDULE);
 
-        // Initialize WebSocket listeners for dashboard
-        initDashboardSocket();
+    // Initialize WebSocket listeners for dashboard
+    initDashboardSocket();
 
-        // Safety-net polling (15s — WebSocket handles real-time)
-        pollStatus();
-        setInterval(pollStatus, 15000);
+    // Safety-net polling (15s — WebSocket handles real-time)
+    pollStatus();
+    setInterval(pollStatus, 15000);
     });
 </script>
 {% endblock %}

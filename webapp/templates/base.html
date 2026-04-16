@@ -12,28 +12,28 @@
     {% if current_user.is_authenticated %}
     <nav class="navbar">
         <div class="navbar-inner">
-            <a href="{{ url_for('main.dashboard') }}" class="navbar-brand">
-                🛡️ <span>SafeStep</span>
+            <a href="{{ url_for('main.dashboard') }}" class="navbar-brand" style="display: flex; align-items: center; gap: 0.5rem;">
+                <i data-lucide="shield"></i> <span>SafeStep</span>
             </a>
             <div class="navbar-links">
-                <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}">
-                    📊 Dashboard
+                <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <i data-lucide="layout-dashboard" style="width: 18px; height: 18px;"></i> Dashboard
                 </a>
-                <a href="{{ url_for('main.alerts_page') }}" class="{{ 'active' if request.endpoint in ['main.alerts_page', 'main.alert_detail'] }}">
-                    🔔 Alerts
+                <a href="{{ url_for('main.alerts_page') }}" class="{{ 'active' if request.endpoint in ['main.alerts_page', 'main.alert_detail'] }}" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <i data-lucide="bell" style="width: 18px; height: 18px;"></i> Alerts
                     <span class="nav-badge" id="nav-alert-count" style="display: none;">0</span>
                 </a>
-                <a href="{{ url_for('main.known_faces_page') }}" id="nav-known-faces-link" class="{{ 'active' if request.endpoint == 'main.known_faces_page' }}">
-                    👥 Known Faces
+                <a href="{{ url_for('main.known_faces_page') }}" id="nav-known-faces-link" class="{{ 'active' if request.endpoint == 'main.known_faces_page' }}" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <i data-lucide="users" style="width: 18px; height: 18px;"></i> Known Faces
                 </a>
-                <a href="{{ url_for('main.cameras_page') }}" class="{{ 'active' if request.endpoint == 'main.cameras_page' }}">
-                    🎥 Cameras
+                <a href="{{ url_for('main.cameras_page') }}" class="{{ 'active' if request.endpoint == 'main.cameras_page' }}" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <i data-lucide="camera" style="width: 18px; height: 18px;"></i> Cameras
                 </a>
-                <a href="{{ url_for('main.logs_page') }}" class="{{ 'active' if request.endpoint == 'main.logs_page' }}">
-                    🧾 Logs
+                <a href="{{ url_for('main.logs_page') }}" class="{{ 'active' if request.endpoint == 'main.logs_page' }}" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <i data-lucide="file-text" style="width: 18px; height: 18px;"></i> Logs
                 </a>
-                <a href="{{ url_for('auth.logout') }}">
-                    Logout
+                <a href="{{ url_for('auth.logout') }}" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <i data-lucide="log-out" style="width: 18px; height: 18px;"></i> Logout
                 </a>
             </div>
         </div>
@@ -57,6 +57,9 @@
 
     <!-- Socket.IO Client (from CDN) -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    
+    <!-- Lucide Icons for professional minimal UI -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
     {% block scripts %}{% endblock %}
 
@@ -87,9 +90,10 @@
 
             // Real-time alert push — show toast notification
             _socket.on('new_alert', (data) => {
+                const cameraLabel = data.camera_label || 'cam1';
                 showToast(
-                    `⚠️ ${data.alert_level} Alert`,
-                    `Unknown person detected at ${data.timestamp}`,
+                    `Alert: ${data.alert_level} on ${cameraLabel}`,
+                    `Unknown person detected on ${cameraLabel} at ${data.timestamp}`,
                     'danger'
                 );
                 // Increment nav badge
@@ -101,14 +105,22 @@
                 }
             });
 
-            // Familiar person sighted
+            // Familiar person sighted (debounced to avoid duplicate toasts from multiple cameras)
+            let lastFamiliarToast = {};
             _socket.on('familiar_seen', (data) => {
                 if (data.names && data.names.length > 0) {
-                    showToast(
-                        `👋 Known Person`,
-                        `${data.names.join(', ')} seen at ${data.timestamp}`,
-                        'info'
-                    );
+                    const namesStr = data.names.join(', ');
+                    const cameraLabel = data.camera_label || 'cam1';
+                    const now = Date.now();
+                    const toastKey = `${cameraLabel}:${namesStr}`;
+                    if (!lastFamiliarToast[toastKey] || now - lastFamiliarToast[toastKey] > 10000) {
+                        lastFamiliarToast[toastKey] = now;
+                        showToast(
+                            `Known Person on ${cameraLabel}`,
+                            `${namesStr} seen on ${cameraLabel} at ${data.timestamp}`,
+                            'info'
+                        );
+                    }
                 }
             });
 
@@ -191,6 +203,9 @@
         updateAlertBadge();
         setInterval(updateAlertBadge, 30000);
         {% endif %}
+        
+        // Initialize all Lucide SVG icons
+        lucide.createIcons();
     </script>
 </body>
 </html>

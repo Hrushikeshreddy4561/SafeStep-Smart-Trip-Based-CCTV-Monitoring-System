@@ -367,7 +367,7 @@ def _load_known_faces():
 def _refresh_known_faces_in_system():
     if os.path.exists(config.EMBEDDINGS_CACHE):
         os.remove(config.EMBEDDINGS_CACHE)
-    cctv_manager.reload_known_faces()
+    threading.Thread(target=cctv_manager.reload_known_faces, daemon=True).start()
 
 
 def _delete_evidence_file(filename):
@@ -439,6 +439,9 @@ def cameras_page():
             'id': cid,
             'label': cam['label'],
             'source': cam['source'],
+            'source_display': cam.get('source_display', cam['source']),
+            'source_badge': cam.get('source_badge', 'Camera'),
+            'source_note': cam.get('source_note', cam['source']),
             'location_type': cfg.get('location_type', 'indoor'),
             'priority_level': cfg.get('priority_level', 'high'),
             'trip_enabled': bool(cfg.get('trip_enabled', True)),
@@ -467,12 +470,38 @@ def cameras_save():
     flash('Camera configuration saved.', 'success')
     return redirect(url_for('main.cameras_page'))
 
+def _parse_alert_log():
+    log_path = config.ALERTS_LOG
+    if not os.path.exists(log_path):
+        return {}
+
+    parsed = {}
+    current_session_time = None
+    
+    with open(log_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('==='):
+                continue
+            
+            if line.startswith('SESSION STARTED:'):
+                current_session_time = line.replace('SESSION STARTED:', '').strip()
+                parsed[current_session_time] = []
+                continue
+                
+            if current_session_time and line.startswith('['):
+                parsed[current_session_time].append(line)
+                
+    return parsed
+
 
 @main_bp.route('/logs')
 @login_required
 def logs_page():
-    sessions = get_trip_sessions(current_user.id, limit=5)
+    sessions = get_trip_sessions(current_user.id, limit=20)
     parsed_sessions = []
+    
+    log_data = _parse_alert_log()
 
     for s in sessions:
         start_time = datetime.datetime.fromisoformat(s['start_time'])
@@ -482,13 +511,45 @@ def logs_page():
         duration_sec = max(0, int((duration_ref - start_time).total_seconds()))
         hours, rem = divmod(duration_sec, 3600)
         minutes, seconds = divmod(rem, 60)
+        
+        # Match session start time string (e.g., 2026-04-11 12:45:26)
+        formatted_start = start_time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Strip timezone if present to safely calculate time difference against local logs
+        safe_start_time = start_time.replace(tzinfo=None)
+        
+        # We might have slight delays (up to a few seconds) between DB insert and Log text insert.
+        session_logs = []
+        for log_time_str, lines in log_data.items():
+            try:
+                lt = datetime.datetime.strptime(log_time_str, "%Y-%m-%d %H:%M:%S")
+                if abs((lt - safe_start_time).total_seconds()) < 60:
+                    session_logs = lines
+                    break
+            except Exception:
+                continue
+
+        # Parse each line for a structured UI display
+        structured_logs = []
+        for line in session_logs:
+            # Pattern: [2026-04-11 12:46:10] [MEDIUM  ] Message
+            match = re.match(r'\[(.*?)\]\s+\[(.*?)\]\s+(.*)', line)
+            if match:
+                structured_logs.append({
+                    'time': match.group(1).strip(),
+                    'level': match.group(2).strip(),
+                    'message': match.group(3).strip()
+                })
+            else:
+                structured_logs.append({'time': '', 'level': 'INFO', 'message': line})
 
         parsed_sessions.append({
             'id': s['id'],
             'status': s['status'],
-            'start_time': s['start_time'],
-            'end_time': s['end_time'],
-            'duration': f"{hours}h {minutes}m {seconds}s"
+            'start_time': start_time.strftime("%B %d, %Y at %I:%M %p"),
+            'end_time': end_time.strftime("%B %d, %Y at %I:%M %p") if end_time else None,
+            'duration': f"{hours}h {minutes}m {seconds}s",
+            'logs': structured_logs
         })
 
     return render_template('logs.html', sessions=parsed_sessions)
@@ -503,6 +564,12 @@ def alerts_page():
     for a in alerts:
         alert_dict = dict(a)
         alert_dict['face_images'] = json.loads(a['face_image_paths'] or '[]')
+        try:
+            ts_str = a['timestamp'].replace('T', ' ')
+            dt = datetime.datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
+            alert_dict['formatted_time'] = dt.strftime("%B %d, %Y at %I:%M %p")
+        except Exception:
+            alert_dict['formatted_time'] = a['timestamp']
         parsed_alerts.append(alert_dict)
     return render_template('alerts.html', alerts=parsed_alerts)
 
@@ -515,6 +582,12 @@ def alert_detail(alert_id):
         return redirect(url_for('main.alerts_page'))
     alert_dict = dict(alert)
     alert_dict['face_images'] = json.loads(alert['face_image_paths'] or '[]')
+    try:
+        ts_str = alert['timestamp'].replace('T', ' ')
+        dt = datetime.datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
+        alert_dict['formatted_time'] = dt.strftime("%B %d, %Y at %I:%M %p")
+    except Exception:
+        alert_dict['formatted_time'] = alert['timestamp']
     user = get_user_by_id(current_user.id)
     return render_template('alert_detail.html', alert=alert_dict, user=user)
 
@@ -613,7 +686,7 @@ def add_known_face():
     target_path = os.path.join(config.KNOWN_FACES_DIR, target_filename)
     face_image.save(target_path)
     _refresh_known_faces_in_system()
-    flash(f'Known face added: {person_name}', 'success')
+    flash(f'Known face added: {person_name}. Recognition is refreshing in the background.', 'success')
     return redirect(url_for('main.known_faces_page'))
 
 
@@ -632,7 +705,7 @@ def delete_known_face(filename):
         os.remove(target_path)
         _refresh_known_faces_in_system()
         delete_known_face_activity(current_user.id, person_name)
-        flash(f'Removed known face: {person_name}', 'success')
+        flash(f'Removed known face: {person_name}. Recognition is refreshing in the background.', 'success')
     else:
         flash('Face file not found.', 'error')
     return redirect(url_for('main.known_faces_page'))
@@ -733,6 +806,7 @@ def api_status():
 def api_start_camera():
     """Start camera preview."""
     cctv_manager.start_preview_all()
+    cctv_manager.preload_recognizers_async()
     return jsonify({"success": True, "message": "Camera preview started"})
 
 

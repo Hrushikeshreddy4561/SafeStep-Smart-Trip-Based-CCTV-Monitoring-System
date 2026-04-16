@@ -46,13 +46,20 @@ payload = {
     "template_params": {
         "to_name": "Test User",
         "to_email": to_email,
+        "alert_title": "HIGH alert on cam2",
         "alert_level": "HIGH",
         "timestamp": "April 10, 2026 at 03:00 PM",
         "face_count": "1",
-        "alert_details": "This is a TEST alert from SafeStep.",
+        "camera_label": "cam2",
+        "camera_heading": "Detection on cam2",
+        "camera_and_time": "cam2 at April 10, 2026 at 03:00 PM",
+        "suspect_summary": "1 unknown face captured",
+        "alert_details": "Camera: cam2\nAlert Level: HIGH\nTime: April 10, 2026 at 03:00 PM\nUnknown faces detected: 1",
         "review_link": "http://localhost:5000/dashboard",
         "face_image_url": "",
         "body_image_url": "",
+        "evidence_count_text": "1 face image(s) plus 1 scene image",
+        "body_image_available": "No",
     },
 }
 

@@ -1453,3 +1453,131 @@ a:hover { color: #79b8ff; }
         transform: translateX(30px);
     }
 }
+
+/* ─── Accordion Logs UI ─────────────────────────────────────────────────── */
+.log-accordion {
+    transition: var(--transition);
+    overflow: hidden;
+}
+
+.log-accordion-summary {
+    cursor: pointer;
+    list-style: none; /* Hide default marker */
+    outline: none;
+    user-select: none;
+}
+.log-accordion-summary::-webkit-details-marker {
+    display: none; /* Hide default marker in webkit */
+}
+
+.log-accordion-summary .accordion-chevron {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+.log-accordion[open] .log-accordion-summary .accordion-chevron {
+    transform: rotate(90deg);
+}
+
+.log-accordion[open] {
+    border-color: rgba(88, 166, 255, 0.3);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.log-event-row {
+    display: grid;
+    grid-template-columns: 55px auto;
+    gap: 0.8rem;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.6rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 6px;
+    border-left: 3px solid var(--accent-blue);
+    align-items: center;
+}
+.log-event-time {
+    color: var(--text-secondary);
+    font-family: monospace;
+    font-size: 0.8rem;
+}
+.log-event-content {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+.log-event-content [class^="badge-"] {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.1);
+    white-space: nowrap;
+}
+.log-event-message {
+    color: var(--text-primary);
+}
+
+/* ─── Mobile Responsiveness ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    /* Main Dashboard Layout */
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    /* Stats Row */
+    .stats-grid {
+        grid-template-columns: 1fr 1fr 1fr; /* keep 3 cols but shrink text, or change to 1fr depending on space */
+        gap: 0.4rem;
+    }
+    .stat-value {
+        font-size: 1.25rem;
+    }
+    
+    /* Known Faces Grid */
+    .known-faces-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Settings/Schedule Grid */
+    .trip-schedule-grid {
+        grid-template-columns: 1fr;
+    }
+    .schedule-actions {
+        grid-template-columns: 1fr;
+    }
+    
+    /* Navbar Adjustments */
+    .navbar-inner {
+        flex-direction: column;
+        height: auto;
+        padding: 0.5rem 0;
+        gap: 0.5rem;
+    }
+    .navbar-links {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    /* Logs Page Adjustments */
+    .log-grid {
+        grid-template-columns: 1fr 1fr; /* Stack into 2 cols on mobile instead of 3 */
+        gap: 0.5rem;
+    }
+    /* Third item takes full width on small screens */
+    .log-grid > div:last-child {
+        grid-column: 1 / -1; 
+    }
+    
+    .alert-detail-header h1 {
+        font-size: 1.2rem;
+    }
+    .action-buttons {
+        flex-direction: column;
+    }
+    .action-btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+}
