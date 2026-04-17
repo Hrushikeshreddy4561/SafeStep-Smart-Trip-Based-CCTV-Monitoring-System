@@ -297,7 +297,36 @@ class AlertSystem:
                      if self._high_count >= config.CRITICAL_THRESHOLD
                      else config.ALERT_HIGH)
             self._current_level = level
-            return level, "Person in zone - face not visible (no capture)"
+
+            # Start session on first detection
+            if not self._session_active:
+                self._session_active = True
+                self._session_start  = now
+
+            # If critical threshold reached but no face, capture BODY only
+            if level == config.ALERT_CRITICAL and not self._session_captured:
+                absent = now - self._session_exit_time
+                if absent >= config.ABSENCE_TIMEOUT:
+                    self._session_captured = True
+                    _, body_path = _save_pair(
+                        clean_frame, annotated_frame, level, [],
+                        camera_label=self._camera_label
+                    )
+                    summary = f"Unknown presence (no face visible); body_saved={'yes' if body_path else 'no'}"
+                    self._log(level, summary)
+                    print(f"\n{'!'*50}")
+                    print(f"  [{self._camera_label}] {level} - BODY ONLY CAPTURE - {readable_time()}")
+                    print(f"  BODY -> {body_path}")
+                    print(f"{'!'*50}\n")
+                    
+                    callback = self._on_capture_callback or _on_capture_callback
+                    if callback:
+                        try:
+                            callback([], body_path, level, [])
+                        except Exception as e:
+                            print(f"[ALERT] Capture callback error: {e}")
+
+            return level, "Person in zone - face not visible"
 
         # ── Face(s) detected — classify ───────────────────────────────────────
         has_familiar = any(f['familiar'] for f in face_results)

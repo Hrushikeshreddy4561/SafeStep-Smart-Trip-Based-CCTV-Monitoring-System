@@ -45,6 +45,7 @@ embeddings.pkl
 evidence/
 alerts/alert_log.txt
 *.log
+*.mp4
 
 # Project — user-specific data
 known_faces/*.jpg
@@ -55,6 +56,7 @@ known_faces/*.png
 webapp/.env
 !webapp/.env.example
 webapp/database.db
+webapp/app.db
 webapp/database.db-wal
 webapp/database.db-shm
 

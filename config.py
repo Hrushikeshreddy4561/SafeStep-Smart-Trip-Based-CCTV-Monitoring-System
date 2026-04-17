@@ -27,7 +27,7 @@ CAMERA_INDEX  = 0
 # CAMERA_SOURCES = [0, 1]
 # CAMERA_SOURCES = ["rtsp://cam-1", "rtsp://cam-2"]
 # Using [0, 0] mirrors the same physical camera in two windows.
-CAMERA_SOURCES = [0, os.path.join(BASE_DIR, "test.mp4")]
+CAMERA_SOURCES = [0, os.path.join(BASE_DIR, "test4.mp4")]
 
 FRAME_WIDTH   = 640
 FRAME_HEIGHT  = 480
@@ -110,7 +110,7 @@ FACE_DETECT_EVERY_N_FRAMES = 4
 FACE_CROP_PADDING = 50
 
 # ─── OPTION D: ZONE-ENTRY + RE-ENTRY CAPTURE ──────────────────────────────────
-ENTRY_ZONE_END_X  = 0.35   # Left 35% of frame = entry zone
+ENTRY_ZONE_END_X  = 1.0    # Full 100% of frame = entry zone (for testing)
 ABSENCE_TIMEOUT   = 30     # Seconds person must be GONE before re-capture
 ABSENCE_GRACE_SEC = 3      # Seconds without detection before marking GONE
 
@@ -144,7 +144,7 @@ ALERT_MEDIUM   = "MEDIUM"
 ALERT_HIGH     = "HIGH"
 ALERT_CRITICAL = "CRITICAL"
 
-CRITICAL_THRESHOLD = 5     # Frames of unknown presence before CRITICAL
+CRITICAL_THRESHOLD = 3     # Frames of unknown presence before CRITICAL
 ALERT_COOLDOWN_SEC = 3
 
 # ─── DISPLAY ──────────────────────────────────────────────────────────────────

@@ -68,7 +68,7 @@
         let _socket = null;
 
         function getSocket() {
-            if (_socket && _socket.connected) return _socket;
+            if (_socket) return _socket;
             _socket = io({ transports: ['websocket', 'polling'] });
 
             _socket.on('connect', () => {

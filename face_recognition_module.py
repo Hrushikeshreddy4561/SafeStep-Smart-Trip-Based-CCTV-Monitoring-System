@@ -38,6 +38,7 @@ import cv2
 import numpy as np
 import pickle
 import time
+import threading
 import config
 
 try:
@@ -125,32 +126,48 @@ class FaceRecognizer:
     Drop-in replacement for the old dlib-based FaceRecognizer.
     Uses InsightFace (RetinaFace + ArcFace) internally.
     All public method signatures are identical to the original.
+    Now a thread-safe singleton to prevent CPU exhaustion with multiple cameras.
     """
+    _instance = None
+    _init_lock = threading.Lock()
+    _inference_lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        with cls._init_lock:
+            if cls._instance is None:
+                cls._instance = super(FaceRecognizer, cls).__new__(cls)
+                cls._instance._initialized = False
+        return cls._instance
 
     def __init__(self):
-        self.known_embeddings = []
-        self.known_names      = []
-        self._app             = None
+        with self._init_lock:
+            if getattr(self, '_initialized', False):
+                return
+            self._initialized = True
+            
+            self.known_embeddings = []
+            self.known_names      = []
+            self._app             = None
 
-        if INSIGHTFACE_AVAILABLE:
-            print("[INFO] Loading InsightFace model (RetinaFace + ArcFace)...")
-            self._app = FaceAnalysis(
-                name      = "buffalo_l",
-                providers = ["CPUExecutionProvider"]
-                # swap to ["CUDAExecutionProvider"] if you have an NVIDIA GPU
-            )
-            self._app.prepare(ctx_id=0, det_size=config.INSIGHTFACE_DET_SIZE)
-            print("[INFO] InsightFace model ready.\n")
-        else:
-            # Fallback: Haar cascade (detection only, no recognition)
-            cascade    = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            self._haar = cv2.CascadeClassifier(cascade)
-            print("[WARN] Falling back to Haar cascade — recognition disabled.")
+            if INSIGHTFACE_AVAILABLE:
+                print("[INFO] Loading InsightFace model (RetinaFace + ArcFace)...")
+                self._app = FaceAnalysis(
+                    name      = "buffalo_l",
+                    providers = ["CPUExecutionProvider"]
+                    # swap to ["CUDAExecutionProvider"] if you have an NVIDIA GPU
+                )
+                self._app.prepare(ctx_id=0, det_size=config.INSIGHTFACE_DET_SIZE)
+                print("[INFO] InsightFace model ready.\n")
+            else:
+                # Fallback: Haar cascade (detection only, no recognition)
+                cascade    = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                self._haar = cv2.CascadeClassifier(cascade)
+                print("[WARN] Falling back to Haar cascade — recognition disabled.")
 
-        # Performance: frame skipping + result caching
-        self._last_results = []
+            # Performance: frame skipping + result caching
+            self._last_results = []
 
-        self._load_known_faces()
+            self._load_known_faces()
 
     # ── Loading ───────────────────────────────────────────────────────────────
 
@@ -233,11 +250,13 @@ class FaceRecognizer:
         """
         Detect and identify all faces in `frame`.
         Returns list of face dicts — same format as the original dlib version.
+        Locked globally to prevent CPU exhaustion starvation across multi-cam runners.
         """
-        if INSIGHTFACE_AVAILABLE and self._app is not None:
-            return self._identify_insightface(frame)
-        else:
-            return self._identify_haar(frame)
+        with self._inference_lock:
+            if INSIGHTFACE_AVAILABLE and self._app is not None:
+                return self._identify_insightface(frame)
+            else:
+                return self._identify_haar(frame)
 
     def _identify_insightface(self, frame):
         """
