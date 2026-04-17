@@ -395,7 +395,7 @@ class CCTVRunner:
                             # Lazy frame.copy(): only copy when person is detected
                             clean_frame = frame.copy() if person_contours else frame
 
-                            # Face recognition with frame skip and background threading
+                            # Face recognition with frame skip (Synchronous to ensure precise face capture)
                             if self._is_video_file:
                                 run_face = bool(person_contours)
                             else:
@@ -403,20 +403,11 @@ class CCTVRunner:
                                             frame_counter % config.FACE_DETECT_EVERY_N_FRAMES == 0)
 
                             if run_face:
-                                face_thread = self._face_thread
-                                if face_thread is None or not face_thread.is_alive():
-                                    # Start face recog in a background thread to prevent camera stutter
-                                    frame_copy = frame.copy()
-
-                                    def _run_recog():
-                                        try:
-                                            self._last_face_results = recognizer.identify_faces(frame_copy)
-                                        except Exception as e:
-                                            self._last_face_results = []
-                                            print(f"[CCTV:{self.camera_label}] Face recognition error: {e}")
-
-                                    self._face_thread = threading.Thread(target=_run_recog, daemon=True)
-                                    self._face_thread.start()
+                                try:
+                                    self._last_face_results = recognizer.identify_faces(frame)
+                                except Exception as e:
+                                    self._last_face_results = []
+                                    print(f"[CCTV:{self.camera_label}] Face recognition error: {e}")
 
                             face_results = getattr(self, '_last_face_results', [])
                             last_face_results = face_results
@@ -447,13 +438,14 @@ class CCTVRunner:
                 with self._frame_lock:
                     self._latest_frame = frame
 
-                # Drift-compensated sleep
+                # Smooth drift-compensated sleep
                 now = time.monotonic()
                 sleep_amount = expected_time - now
                 if sleep_amount > 0.002:
                     time.sleep(sleep_amount)
-                elif sleep_amount < -1.0:
-                    # If we fell more than 1 second behind, reset the clock
+                else:
+                    # If we fell behind, don't try to catch up instantly (causes bursty stutter).
+                    # Reset expected time to now so the NEXT frames play smoothly.
                     expected_time = now
 
             except Exception as e:

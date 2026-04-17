@@ -276,10 +276,10 @@ class FaceRecognizer:
         # Tick absence tracker
         _update_absent(grace=config.ABSENCE_GRACE_SEC)
 
-        # Resize to 50% for faster detection
-        scale    = 0.5
-        small    = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
-        detected = self._app.get(small)
+        # Detect faces on scaled resolution to improve detection consistency
+        scale = 0.5
+        small_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
+        detected = self._app.get(small_frame)
 
         results = []
         for face in detected:

@@ -27,7 +27,7 @@ CAMERA_INDEX  = 0
 # CAMERA_SOURCES = [0, 1]
 # CAMERA_SOURCES = ["rtsp://cam-1", "rtsp://cam-2"]
 # Using [0, 0] mirrors the same physical camera in two windows.
-CAMERA_SOURCES = [0, os.path.join(BASE_DIR, "test4.mp4")]
+CAMERA_SOURCES = [0, os.path.join(BASE_DIR, "test3.mp4")]
 
 FRAME_WIDTH   = 640
 FRAME_HEIGHT  = 480
@@ -146,6 +146,7 @@ ALERT_CRITICAL = "CRITICAL"
 
 CRITICAL_THRESHOLD = 3     # Frames of unknown presence before CRITICAL
 ALERT_COOLDOWN_SEC = 3
+NO_FACE_WAIT_SEC   = 4.0   # Seconds to wait for a face before settling for a BODY-ONLY capture
 
 # ─── DISPLAY ──────────────────────────────────────────────────────────────────
 SHOW_MOTION_BOXES = False

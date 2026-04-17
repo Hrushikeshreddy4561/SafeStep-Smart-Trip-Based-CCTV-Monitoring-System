@@ -266,7 +266,28 @@ class AlertSystem:
                            time_since_seen >= config.ABSENCE_GRACE_SEC)
 
         if exit_confirmed:
-            duration = int(now - self._session_start)
+            # If they left without ever showing a face, capture the best body frame we stored
+            if not self._session_captured and self._current_level in (config.ALERT_HIGH, config.ALERT_CRITICAL):
+                if getattr(self, '_best_body_clean', None) is not None:
+                    self._session_captured = True
+                    _, body_path = _save_pair(
+                        self._best_body_clean, self._best_body_annotated, self._current_level, [],
+                        camera_label=self._camera_label
+                    )
+                    summary = f"Unknown presence (left zone without face visible); body_saved={'yes' if body_path else 'no'}"
+                    self._log(self._current_level, summary)
+                    print(f"\n{'!'*50}")
+                    print(f"  [{self._camera_label}] {self._current_level} - CAPTURE ON EXIT (No Face) - {readable_time()}")
+                    print(f"  BODY -> {body_path}")
+                    print(f"{'!'*50}\n")
+                    
+                    callback = self._on_capture_callback or _on_capture_callback
+                    if callback:
+                        try:
+                            callback([], body_path, self._current_level, [])
+                        except Exception as e:
+                            print(f"[ALERT] Capture callback error: {e}")
+
             duration = int(now - self._session_start)
             # Suppress "Zone exit confirmed" log as it is unnecessarily technical
             # print(f"Zone exit confirmed (present {duration}s)")
@@ -275,6 +296,8 @@ class AlertSystem:
             self._session_captured  = False
             self._high_count        = 0
             self._current_level     = config.ALERT_LOW
+            self._best_body_clean   = None
+            self._best_body_annotated = None
 
         # ── No person at all ──────────────────────────────────────────────────
         if not motion_detected or not person_contours:
@@ -303,28 +326,10 @@ class AlertSystem:
                 self._session_active = True
                 self._session_start  = now
 
-            # If critical threshold reached but no face, capture BODY only
-            if level == config.ALERT_CRITICAL and not self._session_captured:
-                absent = now - self._session_exit_time
-                if absent >= config.ABSENCE_TIMEOUT:
-                    self._session_captured = True
-                    _, body_path = _save_pair(
-                        clean_frame, annotated_frame, level, [],
-                        camera_label=self._camera_label
-                    )
-                    summary = f"Unknown presence (no face visible); body_saved={'yes' if body_path else 'no'}"
-                    self._log(level, summary)
-                    print(f"\n{'!'*50}")
-                    print(f"  [{self._camera_label}] {level} - BODY ONLY CAPTURE - {readable_time()}")
-                    print(f"  BODY -> {body_path}")
-                    print(f"{'!'*50}\n")
-                    
-                    callback = self._on_capture_callback or _on_capture_callback
-                    if callback:
-                        try:
-                            callback([], body_path, level, [])
-                        except Exception as e:
-                            print(f"[ALERT] Capture callback error: {e}")
+            # Continuously update the best frame for Body-Only capture while they are present
+            if not self._session_captured and level == config.ALERT_CRITICAL:
+                self._best_body_clean = clean_frame.copy()
+                self._best_body_annotated = annotated_frame.copy()
 
             return level, "Person in zone - face not visible"
 
@@ -365,7 +370,8 @@ class AlertSystem:
             # Conditions (ALL must be true):
             #   1. Not already captured this session
             #   2. Person was absent long enough before this session
-            if not self._session_captured:
+            #   3. Reached CRITICAL threshold to prevent single-frame glitches
+            if level == config.ALERT_CRITICAL and not self._session_captured:
                 absent = now - self._session_exit_time
 
                 if absent >= config.ABSENCE_TIMEOUT:
